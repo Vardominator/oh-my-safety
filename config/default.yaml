@@ -1,0 +1,37 @@
+# oh-my-privacy configuration
+# Copy to ~/.config/oh-my-privacy/config.yaml to customize
+
+version: 1
+
+monitoring:
+  check_interval: 60          # Full check interval (seconds)
+  fast_check_interval: 5      # Quick route check interval
+  quiet_mode: false
+
+notifications:
+  enabled: true
+  sound: true                 # Platform-specific sound
+
+checks:
+  ip_address:
+    enabled: true
+    services:
+      - ifconfig.me
+      - api.ipify.org
+  dns_leak:
+    enabled: true
+  vpn_tunnel:
+    enabled: true
+    interfaces:
+      - utun*
+      - tun*
+      - ppp*
+      - wg*
+  routing:
+    enabled: true
+  ipv6_leak:
+    enabled: true
+
+# Custom checks (drop-in scripts)
+# custom_checks:
+#   - path: ~/.oh-my-privacy/checks/my-check.sh

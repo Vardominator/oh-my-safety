@@ -1,0 +1,329 @@
+#!/bin/bash
+# oh-my-privacy - VPN Privacy Verification Tool
+# https://github.com/Vardominator/oh-my-privacy
+#
+# A neutral, third-party tool to verify your VPN is actually protecting
+# your privacy by checking for IP leaks, DNS leaks, and routing issues.
+
+set -euo pipefail
+
+# Determine installation directory
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+while [[ -L "$SCRIPT_PATH" ]]; do
+    SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
+    SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
+    [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="$SCRIPT_DIR/$SCRIPT_PATH"
+done
+OMP_ROOT="$(cd -P "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+export OMP_ROOT
+
+# Source core library
+source "$OMP_ROOT/lib/core.sh"
+
+# CLI options
+OMP_CONFIG_FILE=""
+OMP_RUN_ONCE=false
+OMP_DAEMON_MODE=false
+OMP_QUIET_MODE=false
+OMP_VERBOSE=false
+OMP_SINGLE_CHECK=""
+
+# Print usage
+usage() {
+    cat << EOF
+oh-my-privacy - VPN Privacy Verification Tool v${OMP_VERSION}
+
+USAGE:
+    oh-my-privacy [OPTIONS]
+
+OPTIONS:
+    -c, --config FILE    Use custom config file
+    -o, --once           Run once and exit (no continuous monitoring)
+    -d, --daemon         Run as background daemon
+    -q, --quiet          Suppress normal output (only show alerts)
+    -v, --verbose        Verbose output for debugging
+    --check NAME         Run a specific check only
+    --list-checks        List all available checks
+    --version            Show version information
+    -h, --help           Show this help message
+
+EXAMPLES:
+    oh-my-privacy                     # Continuous monitoring
+    oh-my-privacy --once              # Single check
+    oh-my-privacy --check dns-leak    # Run only DNS leak check
+    oh-my-privacy -c myconfig.yaml    # Use custom config
+
+ENVIRONMENT VARIABLES:
+    CHECK_INTERVAL        Full check interval in seconds (default: 60)
+    FAST_CHECK_INTERVAL   Quick route check interval (default: 5)
+
+For more information, visit: https://github.com/Vardominator/oh-my-privacy
+EOF
+}
+
+# Print version
+version() {
+    echo "oh-my-privacy v${OMP_VERSION}"
+    echo "Platform: $(detect_platform)"
+}
+
+# Parse command line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -c|--config)
+                OMP_CONFIG_FILE="$2"
+                shift 2
+                ;;
+            -o|--once)
+                OMP_RUN_ONCE=true
+                shift
+                ;;
+            -d|--daemon)
+                OMP_DAEMON_MODE=true
+                shift
+                ;;
+            -q|--quiet)
+                OMP_QUIET_MODE=true
+                shift
+                ;;
+            -v|--verbose)
+                OMP_VERBOSE=true
+                export OMP_VERBOSE
+                shift
+                ;;
+            --check)
+                OMP_SINGLE_CHECK="$2"
+                shift 2
+                ;;
+            --list-checks)
+                list_checks
+                exit 0
+                ;;
+            --version)
+                version
+                exit 0
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                usage
+                exit 1
+                ;;
+        esac
+    done
+}
+
+# Perform full privacy check
+perform_full_check() {
+    local leaks_found=0
+    local leak_details=""
+
+    print_header "VPN Privacy Check - $(date '+%Y-%m-%d %H:%M:%S')"
+
+    # Source all check modules
+    for check_file in "$OMP_ROOT"/lib/checks/*.sh; do
+        [[ -f "$check_file" ]] || continue
+        source "$check_file"
+    done
+
+    # Run IP address check
+    if config_enabled "checks.ip_address.enabled"; then
+        if ! check_ip_address; then
+            ((leaks_found++))
+            leak_details="${leak_details}• Cannot verify IP address\n"
+        fi
+    fi
+
+    # Run DNS leak check
+    if config_enabled "checks.dns_leak.enabled"; then
+        if ! check_dns_leak; then
+            ((leaks_found++))
+            leak_details="${leak_details}• DNS leak detected\n"
+        fi
+        check_dns_servers 2>/dev/null || true
+    fi
+
+    # Run VPN tunnel check
+    if config_enabled "checks.vpn_tunnel.enabled"; then
+        if ! check_vpn_tunnel; then
+            ((leaks_found++))
+            leak_details="${leak_details}• No VPN tunnel interfaces found\n"
+        fi
+    fi
+
+    # Run routing check
+    if config_enabled "checks.routing.enabled"; then
+        if ! check_routing; then
+            ((leaks_found++))
+            leak_details="${leak_details}• Traffic not routed through VPN\n"
+        fi
+    fi
+
+    # Run IPv6 leak check
+    if config_enabled "checks.ipv6_leak.enabled"; then
+        if ! check_ipv6_leak; then
+            ((leaks_found++))
+            leak_details="${leak_details}• IPv6 leak detected\n"
+        fi
+    fi
+
+    # Summary
+    echo ""
+    print_header "Summary"
+    echo "Public IP:     ${OMP_PUBLIC_IP:-N/A}"
+    echo "VPN Interface: $(get_default_route_interface)"
+    echo ""
+
+    if [[ $leaks_found -gt 0 ]]; then
+        print_check_result "fail" "WARNING: $leaks_found potential privacy leak(s) detected!"
+        echo -e "$leak_details"
+        notify "VPN Privacy Alert" "$leaks_found leak(s) detected!" "Your privacy may be compromised"
+    else
+        print_check_result "pass" "All checks passed - No leaks detected"
+    fi
+
+    echo ""
+    echo "For WebRTC leak test, visit: https://browserleaks.com/webrtc"
+    echo "For comprehensive test, visit: https://ipleak.net"
+    print_separator
+
+    return $leaks_found
+}
+
+# Quick VPN check (just routing, no network calls)
+quick_check() {
+    source "$OMP_ROOT/lib/checks/routing.sh"
+
+    local route_iface
+    route_iface=$(get_default_route_interface)
+
+    if ! is_vpn_interface "$route_iface"; then
+        notify "VPN Privacy Alert" "VPN disconnected! Traffic via $route_iface" "Your privacy may be compromised"
+        return 1
+    fi
+    return 0
+}
+
+# Run continuous monitoring
+run_monitor() {
+    local check_interval="${OMP_CHECK_INTERVAL:-60}"
+    local fast_interval="${OMP_FAST_CHECK_INTERVAL:-5}"
+
+    echo "Starting continuous VPN privacy monitoring..."
+    echo "   Full check interval: ${check_interval} seconds"
+    echo "   Quick check interval: ${fast_interval} seconds"
+    echo "   Press Ctrl+C to stop"
+    echo ""
+
+    # Trap Ctrl+C
+    trap 'echo ""; echo "Monitoring stopped."; exit 0' INT TERM
+
+    local last_full_check=0
+    local last_vpn_status="unknown"
+
+    while true; do
+        local current_time
+        current_time=$(date +%s)
+
+        # Quick VPN route check
+        local route_iface
+        route_iface=$(get_default_route_interface)
+        local current_vpn_status
+
+        if is_vpn_interface "$route_iface"; then
+            current_vpn_status="connected"
+        else
+            current_vpn_status="disconnected"
+        fi
+
+        # Alert if VPN just disconnected
+        if [[ "$current_vpn_status" == "disconnected" && "$last_vpn_status" != "disconnected" ]]; then
+            log_warn "VPN disconnected! Sending alert..."
+            notify "VPN Privacy Alert" "VPN disconnected! Traffic via $route_iface" "Your privacy may be compromised"
+        fi
+
+        last_vpn_status="$current_vpn_status"
+
+        # Full check at interval
+        if [[ $((current_time - last_full_check)) -ge $check_interval ]]; then
+            if [[ "$OMP_QUIET_MODE" != "true" ]]; then
+                perform_full_check || true
+                echo ""
+                echo "Next full check in ${check_interval} seconds (quick checks every ${fast_interval}s)..."
+                echo ""
+            else
+                # Quiet mode: just check for leaks
+                perform_full_check >/dev/null 2>&1 || true
+            fi
+            last_full_check=$current_time
+        fi
+
+        sleep "$fast_interval"
+    done
+}
+
+# Run single check by name
+run_single_check() {
+    local check_name="$1"
+    local check_file="$OMP_ROOT/lib/checks/${check_name}.sh"
+
+    if [[ ! -f "$check_file" ]]; then
+        log_error "Check not found: $check_name"
+        echo "Available checks:"
+        list_checks
+        exit 1
+    fi
+
+    source "$check_file"
+
+    # Convert name to function (dns-leak -> check_dns_leak)
+    local func_name="check_${check_name//-/_}"
+
+    if type "$func_name" &>/dev/null; then
+        print_header "Running check: $check_name"
+        "$func_name"
+        print_separator
+    else
+        log_error "Check function not found: $func_name"
+        exit 1
+    fi
+}
+
+# Main entry point
+main() {
+    parse_args "$@"
+
+    # Load configuration
+    load_config "$OMP_CONFIG_FILE"
+
+    # Load platform-specific functions
+    load_platform
+
+    # Handle daemon mode
+    if [[ "$OMP_DAEMON_MODE" == "true" ]]; then
+        log_info "Starting in daemon mode..."
+        nohup "$0" -c "${OMP_CONFIG_FILE:-}" >/dev/null 2>&1 &
+        echo "Daemon started with PID: $!"
+        exit 0
+    fi
+
+    # Run single check if specified
+    if [[ -n "$OMP_SINGLE_CHECK" ]]; then
+        run_single_check "$OMP_SINGLE_CHECK"
+        exit $?
+    fi
+
+    # Run once or continuously
+    if [[ "$OMP_RUN_ONCE" == "true" ]]; then
+        perform_full_check
+        exit $?
+    else
+        run_monitor
+    fi
+}
+
+main "$@"
