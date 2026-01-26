@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck
+        run: |
+          shellcheck bin/oh-my-privacy
+          shellcheck lib/core.sh
+          shellcheck lib/platform/*.sh
+          shellcheck lib/checks/*.sh
+          shellcheck install.sh
+
+  test-macos:
+    name: Test (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test version
+        run: ./bin/oh-my-privacy --version
+
+      - name: Test help
+        run: ./bin/oh-my-privacy --help
+
+      - name: List checks
+        run: ./bin/oh-my-privacy --list-checks
+
+      - name: Test single check (routing)
+        run: ./bin/oh-my-privacy --check routing || true
+
+      - name: Test installation
+        run: |
+          make install PREFIX=$HOME/.local
+          $HOME/.local/bin/oh-my-privacy --version
+
+  test-linux:
+    name: Test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl dnsutils iproute2
+
+      - name: Test version
+        run: ./bin/oh-my-privacy --version
+
+      - name: Test help
+        run: ./bin/oh-my-privacy --help
+
+      - name: List checks
+        run: ./bin/oh-my-privacy --list-checks
+
+      - name: Test single check (routing)
+        run: ./bin/oh-my-privacy --check routing || true
+
+      - name: Test installation
+        run: |
+          make install PREFIX=$HOME/.local
+          $HOME/.local/bin/oh-my-privacy --version
+
+  install-script:
+    name: Test Install Script
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test install script (dry-run validation)
+        run: |
+          # Validate the install script syntax
+          bash -n install.sh
+          echo "Install script syntax is valid"
