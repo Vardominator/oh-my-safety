@@ -39,6 +39,31 @@ fi
 CACHE_FILE="/tmp/oh-my-privacy-swiftbar-cache"
 CACHE_TTL=30  # seconds
 
+# State tracking for notifications
+STATE_FILE="/tmp/oh-my-privacy-state"
+
+# Send macOS notification
+send_notification() {
+    local title="$1"
+    local message="$2"
+    local subtitle="${3:-}"
+    osascript -e "display notification \"$message\" with title \"$title\" subtitle \"$subtitle\" sound name \"Basso\"" 2>/dev/null
+}
+
+# Get previous state (0 = protected, 1 = leaking)
+get_previous_state() {
+    if [[ -f "$STATE_FILE" ]]; then
+        cat "$STATE_FILE" 2>/dev/null
+    else
+        echo "0"  # Assume protected on first run
+    fi
+}
+
+# Save current state
+save_state() {
+    echo "$1" > "$STATE_FILE"
+}
+
 # Get routing info
 get_route_interface() {
     netstat -rn 2>/dev/null | grep "^default" | head -1 | awk '{print $NF}'
@@ -99,6 +124,24 @@ DNS_IP=$(get_dns_ip)
 if [[ -n "$DNS_IP" && -n "$IP" && "$DNS_IP" != "$IP" ]]; then
     ((LEAKS++))
     ISSUES="${ISSUES}DNS leak: $DNS_IP\n"
+fi
+
+# === Notification Logic ===
+PREVIOUS_STATE=$(get_previous_state)
+CURRENT_STATE=$([[ $LEAKS -eq 0 && $NETWORK_ERROR == false ]] && echo "0" || echo "1")
+
+# Send notification on state change
+if [[ "$CURRENT_STATE" != "$PREVIOUS_STATE" ]]; then
+    if [[ "$CURRENT_STATE" == "1" ]]; then
+        # VPN just went down or leak detected
+        if ! $NETWORK_ERROR; then
+            send_notification "🚨 VPN Privacy Alert" "$LEAKS leak(s) detected!" "Your privacy may be compromised"
+        fi
+    else
+        # VPN just came back up
+        send_notification "🛡️ VPN Protected" "Your connection is now secure" ""
+    fi
+    save_state "$CURRENT_STATE"
 fi
 
 # === Menu Bar Display ===
