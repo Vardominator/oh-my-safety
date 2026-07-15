@@ -1,196 +1,101 @@
 #!/bin/bash
-# oh-my-privacy installer
-# Usage: curl -sSL https://raw.githubusercontent.com/Vardominator/oh-my-privacy/main/install.sh | bash
+# oh-my-safety installer (secondary install path).
+# Prefer Homebrew:  brew install vardominator/oh-my-safety/oh-my-safety
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/Vardominator/oh-my-safety/main/install.sh | bash
+#   curl -fsSL .../install.sh | bash -s -- --with-agent     # also install the launchd agent
+#   curl -fsSL .../install.sh | bash -s -- uninstall
 
-set -euo pipefail
+set -uo pipefail
 
-# Colors
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
-
-# Configuration
-REPO_URL="https://github.com/Vardominator/oh-my-privacy"
-INSTALL_DIR="${OMP_INSTALL_DIR:-/usr/local}"
-CONFIG_DIR="${HOME}/.config/oh-my-privacy"
-
-info() { echo -e "${GREEN}[INFO]${NC} $*"; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
+info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
-# Detect platform
-detect_platform() {
-    case "$(uname -s)" in
-        Darwin) echo "macos" ;;
-        Linux)
-            if grep -q Microsoft /proc/version 2>/dev/null; then
-                echo "wsl"
-            else
-                echo "linux"
-            fi
-            ;;
-        MINGW*|MSYS*|CYGWIN*) echo "windows" ;;
-        *) echo "unknown" ;;
+REPO_URL="https://github.com/Vardominator/oh-my-safety"
+PREFIX="${OMS_INSTALL_PREFIX:-$HOME/.local}"
+LIBDIR="$PREFIX/lib/oh-my-safety"
+BINDIR="$PREFIX/bin"
+
+install_tree() {
+    local tmp
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+
+    info "Downloading oh-my-safety..."
+    if command -v git >/dev/null 2>&1; then
+        git clone --depth 1 "$REPO_URL.git" "$tmp/src" >/dev/null 2>&1
+    elif command -v curl >/dev/null 2>&1; then
+        mkdir -p "$tmp/src"
+        curl -fsSL "$REPO_URL/archive/refs/heads/main.tar.gz" | tar xz -C "$tmp/src" --strip-components=1
+    else
+        error "Need git or curl to install."; exit 1
+    fi
+
+    info "Installing to $LIBDIR ..."
+    rm -rf "$LIBDIR"
+    mkdir -p "$LIBDIR" "$BINDIR"
+    cp -R "$tmp/src/bin" "$tmp/src/lib" "$tmp/src/config" "$LIBDIR/"
+    [ -d "$tmp/src/docs" ] && cp -R "$tmp/src/docs" "$LIBDIR/" || true
+    chmod +x "$LIBDIR/bin/oh-my-safety"
+
+    # Symlink into PATH; the entry script resolves its own root via the symlink.
+    ln -sf "$LIBDIR/bin/oh-my-safety" "$BINDIR/oh-my-safety"
+    ln -sf "$LIBDIR/bin/oh-my-privacy" "$BINDIR/oh-my-privacy"
+
+    info "Installed. Binary: $BINDIR/oh-my-safety"
+    case ":$PATH:" in
+        *":$BINDIR:"*) : ;;
+        *) warn "Add $BINDIR to your PATH:"; echo "    echo 'export PATH=\"$BINDIR:\$PATH\"' >> ~/.zshrc && source ~/.zshrc" ;;
     esac
-}
-
-# Check if we have write permission
-check_permissions() {
-    local dir="$1"
-    if [[ -w "$dir" ]]; then
-        return 0
-    elif [[ $EUID -eq 0 ]]; then
-        return 0
-    else
-        return 1
-    fi
-}
-
-# Install from git clone
-install_from_git() {
-    local tmp_dir
-    tmp_dir=$(mktemp -d)
-    trap "rm -rf '$tmp_dir'" EXIT
-
-    info "Downloading oh-my-privacy..."
-    if command -v git &>/dev/null; then
-        git clone --depth 1 "$REPO_URL.git" "$tmp_dir" 2>/dev/null
-    elif command -v curl &>/dev/null; then
-        curl -sL "${REPO_URL}/archive/main.tar.gz" | tar xz -C "$tmp_dir" --strip-components=1
-    elif command -v wget &>/dev/null; then
-        wget -qO- "${REPO_URL}/archive/main.tar.gz" | tar xz -C "$tmp_dir" --strip-components=1
-    else
-        error "Neither git, curl, nor wget found. Please install one of them."
-        exit 1
-    fi
-
-    # Determine install location
-    if ! check_permissions "$INSTALL_DIR"; then
-        # Try user-local install
-        INSTALL_DIR="${HOME}/.local"
-        warn "No write permission to /usr/local, installing to ~/.local"
-    fi
-
-    local bin_dir="$INSTALL_DIR/bin"
-    local lib_dir="$INSTALL_DIR/lib/oh-my-privacy"
-
-    info "Installing to $INSTALL_DIR..."
-
-    # Create directories
-    mkdir -p "$bin_dir" "$lib_dir" "$CONFIG_DIR"
-
-    # Copy files
-    cp -r "$tmp_dir/lib/"* "$lib_dir/"
-    cp -r "$tmp_dir/config/"* "$CONFIG_DIR/" 2>/dev/null || true
-
-    # Create wrapper script that points to the lib directory
-    cat > "$bin_dir/oh-my-privacy" << EOF
-#!/bin/bash
-export OMP_ROOT="$lib_dir/.."
-exec "$lib_dir/../bin/oh-my-privacy" "\$@"
-EOF
-
-    # Actually copy the bin script
-    mkdir -p "$INSTALL_DIR/bin"
-    cp "$tmp_dir/bin/oh-my-privacy" "$bin_dir/oh-my-privacy"
-    chmod +x "$bin_dir/oh-my-privacy"
-
-    # Update OMP_ROOT in the installed script
-    sed -i.bak "s|OMP_ROOT=\"\$(cd -P \"\$(dirname \"\$SCRIPT_PATH\")/..\" && pwd)\"|OMP_ROOT=\"$lib_dir/..\"|" "$bin_dir/oh-my-privacy" 2>/dev/null || \
-    sed -i '' "s|OMP_ROOT=\"\$(cd -P \"\$(dirname \"\$SCRIPT_PATH\")/..\" && pwd)\"|OMP_ROOT=\"$lib_dir/..\"|" "$bin_dir/oh-my-privacy" 2>/dev/null || true
-    rm -f "$bin_dir/oh-my-privacy.bak"
-
-    # Create lib parent structure
-    mkdir -p "$lib_dir/../bin" "$lib_dir/../config"
-    cp "$tmp_dir/bin/oh-my-privacy" "$lib_dir/../bin/"
-    chmod +x "$lib_dir/../bin/oh-my-privacy"
-    cp -r "$tmp_dir/config/"* "$lib_dir/../config/" 2>/dev/null || true
-
-    info "Installation complete!"
-}
-
-# Post-install instructions
-post_install() {
-    local bin_dir="$INSTALL_DIR/bin"
-    local platform
-    platform=$(detect_platform)
 
     echo ""
-    echo "============================================"
-    echo "  oh-my-privacy installed successfully!"
-    echo "============================================"
-    echo ""
-
-    # Check if bin_dir is in PATH
-    if [[ ":$PATH:" != *":$bin_dir:"* ]]; then
-        warn "Add $bin_dir to your PATH:"
-        echo ""
-        case "$platform" in
-            macos)
-                echo "  echo 'export PATH=\"$bin_dir:\$PATH\"' >> ~/.zshrc"
-                echo "  source ~/.zshrc"
-                ;;
-            linux|wsl)
-                echo "  echo 'export PATH=\"$bin_dir:\$PATH\"' >> ~/.bashrc"
-                echo "  source ~/.bashrc"
-                ;;
-        esac
-        echo ""
-    fi
-
     echo "Quick start:"
-    echo "  oh-my-privacy --once     # Run a single privacy check"
-    echo "  oh-my-privacy            # Start continuous monitoring"
-    echo "  oh-my-privacy --help     # Show all options"
+    echo "  oh-my-safety scan       # run all checks now"
+    echo "  oh-my-safety status     # your current safety posture"
+    echo "  oh-my-safety doctor     # setup & permissions"
     echo ""
-    echo "Configuration file: $CONFIG_DIR/default.yaml"
-    echo "Documentation: $REPO_URL"
-    echo ""
+    echo "Tip: 'brew install vardominator/oh-my-safety/oh-my-safety' is the recommended install."
 }
 
-# Uninstall
 uninstall() {
-    info "Uninstalling oh-my-privacy..."
+    info "Uninstalling oh-my-safety..."
+    "$BINDIR/oh-my-safety" uninstall-agent >/dev/null 2>&1 || true
+    local p
+    for p in \
+        "$HOME/.local/bin/oh-my-safety" "$HOME/.local/bin/oh-my-privacy" \
+        "$HOME/.local/lib/oh-my-safety" \
+        "/usr/local/bin/oh-my-safety" "/usr/local/bin/oh-my-privacy" \
+        "/usr/local/lib/oh-my-safety" \
+        "/usr/local/bin/oh-my-privacy" "/usr/local/lib/oh-my-privacy" \
+        "$HOME/.local/bin/oh-my-privacy" "$HOME/.local/lib/oh-my-privacy"; do
+        [ -e "$p" ] && { rm -rf "$p"; info "Removed: $p"; }
+    done
+    echo "Config (~/.config/oh-my-safety) and state (~/.local/state/oh-my-safety) were preserved."
+}
 
-    local locations=(
-        "/usr/local/bin/oh-my-privacy"
-        "/usr/local/lib/oh-my-privacy"
-        "${HOME}/.local/bin/oh-my-privacy"
-        "${HOME}/.local/lib/oh-my-privacy"
-    )
-
-    for loc in "${locations[@]}"; do
-        if [[ -e "$loc" ]]; then
-            rm -rf "$loc"
-            info "Removed: $loc"
-        fi
+main() {
+    local with_agent=0 action="install"
+    for a in "$@"; do
+        case "$a" in
+            --with-agent) with_agent=1 ;;
+            uninstall) action="uninstall" ;;
+            install) action="install" ;;
+        esac
     done
 
-    echo ""
-    echo "Note: Configuration at $CONFIG_DIR was preserved."
-    echo "Remove it manually if desired: rm -rf $CONFIG_DIR"
-}
-
-# Main
-main() {
-    echo ""
-    echo "oh-my-privacy installer"
-    echo "======================="
-    echo ""
-
-    case "${1:-install}" in
+    echo "oh-my-safety installer"
+    case "$action" in
         install)
-            install_from_git
-            post_install
+            install_tree
+            if [ "$with_agent" -eq 1 ]; then
+                info "Installing launchd monitoring agent..."
+                "$BINDIR/oh-my-safety" install-agent || warn "Agent install failed; run 'oh-my-safety install-agent' manually."
+            fi
             ;;
-        uninstall)
-            uninstall
-            ;;
-        *)
-            echo "Usage: $0 [install|uninstall]"
-            exit 1
-            ;;
+        uninstall) uninstall ;;
     esac
 }
 

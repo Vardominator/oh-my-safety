@@ -1,67 +1,56 @@
-class OhMyPrivacy < Formula
-  desc "VPN privacy verification tool - checks for IP, DNS, and routing leaks"
-  homepage "https://github.com/Vardominator/oh-my-privacy"
-  url "https://github.com/Vardominator/oh-my-privacy/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "PLACEHOLDER_SHA256"
+class OhMySafety < Formula
+  desc "macOS safety & privacy monitor: leaks, malware persistence, wallet exposure"
+  homepage "https://github.com/Vardominator/oh-my-safety"
+  url "https://github.com/Vardominator/oh-my-safety/archive/refs/tags/v0.2.0.tar.gz"
+  # Filled in by the release workflow; `brew install --build-from-source` from a
+  # local checkout does not need it.
+  sha256 "REPLACE_WITH_RELEASE_SHA256"
   license "MIT"
-  head "https://github.com/Vardominator/oh-my-privacy.git", branch: "main"
+  head "https://github.com/Vardominator/oh-my-safety.git", branch: "main"
 
-  depends_on "bash"
-  depends_on "curl"
+  # No dependencies on purpose: pure /bin/bash (3.2-compatible) and tools that
+  # ship with macOS. "Zero dependencies" is a headline feature.
 
   def install
-    # Install library files
-    (lib/"oh-my-privacy").install Dir["lib/*"]
-
-    # Install config
-    (etc/"oh-my-privacy").install "config/default.yaml"
-
-    # Install and configure the main script
-    bin.install "bin/oh-my-privacy"
-
-    # Create wrapper that sets OMP_ROOT
-    (bin/"oh-my-privacy").write <<~EOS
-      #!/bin/bash
-      export OMP_ROOT="#{prefix}"
-      exec "#{prefix}/bin/oh-my-privacy.real" "$@"
-    EOS
-
-    # Move actual script
-    mv bin/"oh-my-privacy", bin/"oh-my-privacy.real"
-    chmod 0755, bin/"oh-my-privacy"
-    chmod 0755, bin/"oh-my-privacy.real"
-
-    # Create config directory structure expected by the tool
-    (prefix/"lib").install_symlink lib/"oh-my-privacy"
-    (prefix/"config").install_symlink etc/"oh-my-privacy/default.yaml"
+    libexec.install "bin", "lib", "config"
+    # The entry script resolves its own root by following symlinks, so a plain
+    # symlink is all that's needed — no wrapper, no path rewriting.
+    bin.install_symlink libexec/"bin/oh-my-safety"
+    bin.install_symlink libexec/"bin/oh-my-privacy"
+    pkgshare.install "docs" if File.directory?("docs")
   end
 
-  def post_install
-    # Create user config directory
-    (var/"oh-my-privacy").mkpath
+  service do
+    run [opt_bin/"oh-my-safety", "monitor", "--quiet"]
+    run_type :immediate
+    keep_alive true
+    process_type :background
+    throttle_interval 30
+    log_path var/"log/oh-my-safety.log"
+    error_log_path var/"log/oh-my-safety.log"
+    environment_variables PATH: std_service_path_env
   end
 
   def caveats
     <<~EOS
-      oh-my-privacy has been installed!
+      Start continuous background monitoring (launchd agent, runs at login):
+        brew services start oh-my-safety
 
-      Quick start:
-        oh-my-privacy --once     # Run a single privacy check
-        oh-my-privacy            # Start continuous monitoring
-        oh-my-privacy --help     # Show all options
+      Then, anytime:
+        oh-my-safety status     # your current safety posture
+        oh-my-safety scan       # run all checks now
+        oh-my-safety doctor     # check setup & permissions
 
-      Configuration:
-        Default config: #{etc}/oh-my-privacy/default.yaml
-        User config: ~/.config/oh-my-privacy/config.yaml
-
-      To create a user config:
-        mkdir -p ~/.config/oh-my-privacy
-        cp #{etc}/oh-my-privacy/default.yaml ~/.config/oh-my-privacy/config.yaml
+      Some deep checks (TCC audit, protected-folder scans) need Full Disk
+      Access — run `oh-my-safety doctor` for guidance. Everything runs
+      locally; nothing is ever uploaded. See the privacy docs:
+        #{opt_pkgshare}/docs/privacy.md
     EOS
   end
 
   test do
-    assert_match "oh-my-privacy v", shell_output("#{bin}/oh-my-privacy --version")
-    assert_match "ip-address", shell_output("#{bin}/oh-my-privacy --list-checks")
+    assert_match "oh-my-safety v", shell_output("#{bin}/oh-my-safety version")
+    assert_match "routing", shell_output("#{bin}/oh-my-safety checks")
+    system bin/"oh-my-safety", "scan", "--offline"
   end
 end

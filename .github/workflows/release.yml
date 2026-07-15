@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches OMS_VERSION
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver=$(grep -o 'OMS_VERSION="[^"]*"' lib/core.sh | cut -d'"' -f2)
+          echo "tag=$tag version=$ver"
+          [ "$tag" = "$ver" ] || { echo "::error::tag v$tag != OMS_VERSION $ver"; exit 1; }
+
+      - name: Build release tarball + checksum
+        run: |
+          name="oh-my-safety-${GITHUB_REF_NAME}"
+          mkdir -p dist
+          git archive --format=tar.gz --prefix="oh-my-safety-${GITHUB_REF_NAME#v}/" \
+            -o "dist/${name}.tar.gz" "${GITHUB_REF_NAME}"
+          ( cd dist && shasum -a 256 "${name}.tar.gz" > checksums.txt )
+          cat dist/checksums.txt
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/checksums.txt
+
+      # Bumps the formula in the dedicated tap repo (Vardominator/homebrew-oh-my-safety).
+      # Requires a fine-grained PAT with contents:write on that repo, stored as
+      # the TAP_GITHUB_TOKEN secret. Skipped automatically if the secret is absent.
+      - name: Bump Homebrew tap formula
+        if: ${{ secrets.TAP_GITHUB_TOKEN != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          set -e
+          ver="${GITHUB_REF_NAME#v}"
+          sha=$(awk '{print $1}' dist/checksums.txt)
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/Vardominator/homebrew-oh-my-safety.git" tap
+          f=tap/Formula/oh-my-safety.rb
+          cp Formula/oh-my-safety.rb "$f"
+          sed -i "s|/archive/refs/tags/v[0-9.]*\.tar\.gz|/archive/refs/tags/v${ver}.tar.gz|" "$f"
+          sed -i "s|sha256 \"[^\"]*\"|sha256 \"${sha}\"|" "$f"
+          cd tap
+          git config user.name "release-bot"
+          git config user.email "release-bot@users.noreply.github.com"
+          git commit -am "oh-my-safety ${ver}"
+          git push

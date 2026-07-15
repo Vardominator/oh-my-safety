@@ -1,0 +1,16 @@
+# oh-my-safety - known desktop crypto-wallet artifacts
+# Columns (TAB-separated): id  path_glob  process_hint
+# path_glob uses a leading ~/ meaning $HOME. process_hint is a `pgrep -f` term
+# used to tell whether the wallet app is currently running.
+electrum	~/.electrum/wallets	Electrum
+exodus	~/Library/Application Support/Exodus/exodus.wallet	Exodus
+ledger-live	~/Library/Application Support/Ledger Live	Ledger Live
+atomic	~/Library/Application Support/atomic/Local Storage/leveldb	Atomic Wallet
+coinomi	~/Library/Application Support/Coinomi/wallets	Coinomi
+trezor-suite	~/Library/Application Support/@trezor/suite-desktop	Trezor Suite
+bitcoin-core	~/Library/Application Support/Bitcoin/wallets	bitcoind
+bitcoin-core-legacy	~/Library/Application Support/Bitcoin/wallet.dat	bitcoind
+sparrow	~/.sparrow/wallets	Sparrow
+wasabi	~/.walletwasabi/client/Wallets	Wasabi
+monero	~/Monero/wallets	monero-wallet
+daedalus	~/Library/Application Support/Daedalus Mainnet/wallets	Daedalus
