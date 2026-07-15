@@ -1,0 +1,52 @@
+#!/bin/bash
+# oh-my-safety - EXAMPLE custom check (copy me to add your own).
+#
+# To add a check without touching oh-my-safety itself:
+#   1. Copy this file to  ~/.config/oh-my-safety/checks/<your-name>.sh
+#      (remove the .example suffix; the filename minus .sh is the check name).
+#   2. Set CHECK_NAME to match the filename, and rename the function to
+#      check_<name-with-dashes-as-underscores>.
+#   3. Run `oh-my-safety scan` — it's auto-discovered, gated, and reported like
+#      any built-in check. `oh-my-safety checks` will list it under "custom".
+#
+# The manifest header below is the single source of truth for both the runner
+# and the docs generator. See docs/extending.md for the full contract.
+
+CHECK_NAME="example-check"                 # MUST equal the filename without .sh
+CHECK_DESCRIPTION="Example custom check"
+CHECK_CATEGORY="custom"
+CHECK_PLATFORMS="macos"                     # space-separated, or "all"
+CHECK_SEVERITY="warn"                       # default severity of a finding
+CHECK_CONTRACT="2"                          # check-contract version you target
+CHECK_REQUIRES_NETWORK="false"
+CHECK_INTERVAL="600"                        # daemon cadence hint (seconds)
+CHECK_DOC=""                                # optional: path to a doc page
+
+# Return: 0 = pass, 1 = finding(s), 77 = self-skip (e.g. missing permission).
+check_example_check() {
+    # --- Example: flag world-writable files in a directory you care about. ---
+    local dir="$HOME/Downloads"
+    local findings=0 f id
+
+    while IFS= read -r f; do
+        [ -z "$f" ] && continue
+        id="example:$f"
+        # Let the user permanently ignore an item they've reviewed.
+        allowlist_match "$CHECK_NAME" "$id" && continue
+        print_check_result warn "world-writable file: $f"
+        echo "  - to ignore: oh-my-safety ignore $CHECK_NAME '$id'   [id: $id]"
+        findings=$((findings + 1))
+    done <<EOF
+$(find "$dir" -maxdepth 1 -type f -perm -0002 2>/dev/null)
+EOF
+
+    if [ "$findings" -gt 0 ]; then
+        CHECK_FINDING_SUMMARY="$findings world-writable file(s) in Downloads"
+        CHECK_RESULT_SEVERITY="warn"
+        return 1
+    fi
+
+    print_check_result pass "No world-writable files in Downloads"
+    CHECK_FINDING_SUMMARY="clean"
+    return 0
+}

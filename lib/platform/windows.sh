@@ -1,5 +1,5 @@
 #!/bin/bash
-# oh-my-privacy - Windows/WSL platform module
+# oh-my-safety - Windows/WSL platform module
 
 # Detect if we're in WSL or native Windows (Git Bash, MSYS2, Cygwin)
 _is_wsl() {
@@ -26,7 +26,7 @@ send_notification() {
             \$xml = New-Object Windows.Data.Xml.Dom.XmlDocument
             \$xml.LoadXml(\$template)
             \$toast = [Windows.UI.Notifications.ToastNotification]::new(\$xml)
-            [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('oh-my-privacy').Show(\$toast)
+            [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('oh-my-safety').Show(\$toast)
         " 2>/dev/null
     else
         # Native Windows: Direct PowerShell

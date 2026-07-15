@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y shellcheck
+          shellcheck --severity=warning bin/oh-my-safety bin/oh-my-privacy install.sh \
+            lib/*.sh lib/cmd/*.sh lib/platform/*.sh lib/checks/*/*.sh \
+            plugins/swiftbar/*.sh scripts/*.sh
+
+  invariants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No network calls in security checks (no-phone-home gate)
+        run: |
+          if grep -rnE '(curl|wget|/dev/tcp|nc )' lib/checks/security/; then
+            echo "::error::security checks must not make network calls"; exit 1
+          fi
+          echo "OK: security checks make no network calls"
+      - name: Version is single-sourced in lib/core.sh
+        run: |
+          v=$(grep -o 'OMS_VERSION="[^"]*"' lib/core.sh | cut -d'"' -f2)
+          echo "version=$v"
+          grep -q "v${v}.tar.gz" Formula/oh-my-safety.rb || { echo "::error::formula url version != OMS_VERSION"; exit 1; }
+          if grep -rnE '[0-9]+\.[0-9]+\.[0-9]+' plugins/ --include='*.sh'; then
+            echo "::error::plugins must not hardcode a version"; exit 1
+          fi
+      - name: bash 3.2 forbidden-feature scan
+        run: |
+          if grep -rnE 'declare -A|mapfile|readarray|\$\{[A-Za-z_]+\^\^|\$\{[A-Za-z_]+,,' \
+             bin/ lib/ plugins/ scripts/ 2>/dev/null; then
+            echo "::error::found a bash 4+ construct (must stay 3.2-compatible)"; exit 1
+          fi
+          echo "OK: no bash 4+ constructs"
+
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse everything under /bin/bash (3.2)
+        run: |
+          for f in bin/oh-my-safety bin/oh-my-privacy lib/*.sh lib/cmd/*.sh \
+                   lib/platform/*.sh lib/checks/*/*.sh plugins/swiftbar/*.sh; do
+            /bin/bash -n "$f"
+          done
+      - name: Unit tests (bats, if present)
+        run: |
+          if [ -d test ]; then
+            brew install bats-core
+            bats test
+          else
+            echo "no test/ directory yet — skipping bats (see roadmap)"
+          fi
+      - name: Smoke scan + valid JSON
+        run: |
+          ./bin/oh-my-safety version
+          ./bin/oh-my-safety checks
+          # A scan exits non-zero when it finds warnings/critical items (expected
+          # on any real machine); we only assert it runs and emits valid JSON.
+          ./bin/oh-my-safety scan --offline || true
+          ./bin/oh-my-safety status --json | python3 -m json.tool > /dev/null
+          ./bin/oh-my-safety status --format tsv > /dev/null
+      - name: Docs catalog is current
+        run: ./scripts/gen-docs.sh --check

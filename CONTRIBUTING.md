@@ -1,190 +1,68 @@
-# Contributing to oh-my-privacy
+# Contributing to oh-my-safety
 
-Thank you for your interest in contributing to oh-my-privacy! This document provides guidelines for contributing.
+Thanks for contributing! oh-my-safety is designed to grow — most contributions
+are new **checks**, which are drop-in files following a documented contract.
 
-## Ways to Contribute
+## Ways to contribute
 
-- **Add new privacy checks** - DNS over HTTPS detection, WebRTC leak detection, etc.
-- **Improve platform support** - Better Windows support, FreeBSD, etc.
-- **Fix bugs** - Check the issues page for known bugs
-- **Improve documentation** - Help others use the tool
-- **Report issues** - Found a bug or have a feature request?
+- **Add a check** — a new detection (persistence vector, exposure heuristic,
+  hardening item) or a privacy check. This is the most valuable contribution.
+- **Improve a check** — reduce false positives, cover more artifacts (e.g. more
+  wallet paths in `lib/data/`).
+- **Docs** — clarify a check page, the threat model, or a guide.
+- **Bugs & ideas** — open an issue.
 
-## Development Setup
+## Development setup
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Vardominator/oh-my-privacy.git
-   cd oh-my-privacy
-   ```
-
-2. Run locally without installing:
-   ```bash
-   ./bin/oh-my-privacy --once
-   ```
-
-3. Run shellcheck for linting:
-   ```bash
-   make lint
-   ```
-
-## Project Structure
-
-```
-oh-my-privacy/
-├── bin/
-│   └── oh-my-privacy          # Main CLI entry point
-├── lib/
-│   ├── core.sh                # Core utilities, config, logging
-│   ├── platform/
-│   │   ├── detect.sh          # Platform detection utilities
-│   │   ├── macos.sh           # macOS-specific functions
-│   │   ├── linux.sh           # Linux-specific functions
-│   │   └── windows.sh         # Windows/WSL functions
-│   └── checks/
-│       ├── ip-address.sh      # Public IP check
-│       ├── dns-leak.sh        # DNS leak detection
-│       ├── vpn-tunnel.sh      # VPN interface check
-│       ├── routing.sh         # Traffic routing check
-│       └── ipv6-leak.sh       # IPv6 leak detection
-├── config/
-│   └── default.yaml           # Default configuration
-├── install.sh                 # Installer script
-└── Makefile                   # Build/install automation
+```bash
+git clone https://github.com/Vardominator/oh-my-safety.git
+cd oh-my-safety
+./bin/oh-my-safety scan            # run it without installing
+./bin/oh-my-safety scan --offline  # deterministic (no network checks)
+make lint                          # shellcheck
+make docs                          # regenerate the checks catalog
 ```
 
-## Adding a New Check
+## Project structure
 
-1. **Create the check file** at `lib/checks/your-check.sh`:
+See [docs/architecture.md](docs/architecture.md). The short version: `bin/` is
+the dispatcher, `lib/core.sh` + `lib/{yaml,state,allowlist,runner}.sh` are the
+framework, `lib/cmd/*` are subcommands, `lib/platform/*` are OS accessors, and
+`lib/checks/{privacy,security}/*` are the checks.
 
-   ```bash
-   #!/bin/bash
-   # oh-my-privacy - Your Check Name
-   # Brief description of what this check does
+## Adding a check
 
-   CHECK_NAME="your-check"
-   CHECK_DESCRIPTION="Your Check Description"
+The canonical guide is **[docs/extending.md](docs/extending.md)**. In brief:
 
-   check_your_check() {
-       echo ""
-       echo "Step N: Your Check Name"
-       echo "-------------------------------------------"
+1. Create `lib/checks/<category>/<name>.sh` (or, for a personal check,
+   `~/.config/oh-my-safety/checks/<name>.sh`).
+2. Add the manifest header (`CHECK_NAME`, `CHECK_DESCRIPTION`, `CHECK_CATEGORY`,
+   `CHECK_PLATFORMS`, `CHECK_SEVERITY`, `CHECK_CONTRACT`,
+   `CHECK_REQUIRES_NETWORK`, `CHECK_INTERVAL`, `CHECK_DOC`).
+3. Implement `check_<name_with_underscores>()` returning `0` (pass) / `1`
+   (finding) / `77` (skip); set `CHECK_FINDING_SUMMARY` and
+   `CHECK_RESULT_SEVERITY`; print with `print_check_result`; filter accepted
+   items with `allowlist_match`; use the baseline API for drift detection.
+4. Run `make docs` to scaffold its doc page and update the catalog, then fill in
+   the page.
 
-       # Your check logic here
-       # Use platform-agnostic functions from platform/*.sh
+Copy `lib/checks/_template.sh.example` to start.
 
-       if [[ condition_passes ]]; then
-           print_check_result "pass" "Check passed message"
-           return 0
-       else
-           print_check_result "fail" "Check failed message"
-           return 1
-       fi
-   }
-   ```
+## Rules (enforced by CI)
 
-2. **Add configuration** in `config/default.yaml`:
+- **bash 3.2 compatible** — no `declare -A`, `mapfile`/`readarray`,
+  `${x^^}`/`${x,,}`, `|&`. Files must pass `/bin/bash -n`.
+- **Security checks make no network calls** — `grep -rE 'curl|wget|/dev/tcp|nc '
+  lib/checks/security/` must return nothing.
+- **No sudo; degrade gracefully** — return `77` with a clear reason when a
+  permission is missing rather than failing.
+- **Version is single-sourced** in `lib/core.sh` (`OMS_VERSION`); don't hardcode
+  it elsewhere.
+- **`make docs` must be current** — commit the regenerated catalog.
 
-   ```yaml
-   checks:
-     your_check:
-       enabled: true
-       # Any check-specific options
-   ```
+## Pull requests
 
-3. **Document the check** in README.md
-
-## Adding Platform Support
-
-Platform modules live in `lib/platform/`. Each platform must implement these functions:
-
-| Function | Purpose |
-|----------|---------|
-| `send_notification(title, message, subtitle)` | System notification |
-| `send_alert(title, message)` | Blocking alert dialog |
-| `get_public_ip()` | Get public IP address |
-| `get_dns_resolver_ip()` | Get DNS resolver IP |
-| `get_dns_servers()` | List configured DNS servers |
-| `get_vpn_interfaces()` | List VPN tunnel interfaces |
-| `get_interface_ip(iface)` | Get IP of an interface |
-| `get_default_route_interface()` | Get default route interface |
-| `get_default_route_gateway()` | Get default gateway |
-| `get_default_route()` | Get full default route info |
-| `is_vpn_interface(iface)` | Check if interface is VPN |
-| `get_ipv6_address()` | Get public IPv6 address |
-
-## Code Style
-
-- Use `bash` (not sh) for bash-specific features
-- Use `[[ ]]` for conditionals, not `[ ]`
-- Quote all variable expansions: `"$var"` not `$var`
-- Use `local` for function-scoped variables
-- Add comments for non-obvious logic
-- Keep lines under 100 characters
-- Use 4-space indentation
-
-## Testing
-
-Before submitting a PR:
-
-1. **Test on your platform:**
-   ```bash
-   ./bin/oh-my-privacy --once
-   ```
-
-2. **Run shellcheck:**
-   ```bash
-   make lint
-   ```
-
-3. **Test specific checks:**
-   ```bash
-   ./bin/oh-my-privacy --check your-check
-   ```
-
-4. **Test with VPN connected and disconnected**
-
-## Pull Request Process
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature`
-3. Make your changes
-4. Run tests and linting
-5. Commit with clear messages
-6. Push and create a Pull Request
-
-### PR Checklist
-
-- [ ] Code follows the style guide
-- [ ] shellcheck passes
-- [ ] Tested on at least one platform
-- [ ] Documentation updated if needed
-- [ ] Config updated if new options added
-
-## Reporting Issues
-
-When reporting bugs, please include:
-
-- oh-my-privacy version (`oh-my-privacy --version`)
-- Operating system and version
-- VPN software being used
-- Full output with `--verbose` flag
-- Steps to reproduce
-
-## Feature Requests
-
-Feature requests are welcome! Please:
-
-- Check existing issues first
-- Describe the use case
-- Explain why this would benefit users
-
-## Code of Conduct
-
-- Be respectful and inclusive
-- Focus on constructive feedback
-- Help others learn and grow
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the MIT License.
+Keep PRs focused, run `make lint` and a scan of your new check, and include a
+doc page for any new check. Be honest in docs about what a check can't detect —
+see the tone in [docs/threat-model.md](docs/threat-model.md). By contributing you
+agree your work is licensed under the project's MIT license.

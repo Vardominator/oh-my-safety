@@ -1,0 +1,11 @@
+# oh-my-safety shellcheck configuration.
+
+# CHECK_* manifest variables (and CHECK_FINDING_SUMMARY / CHECK_RESULT_SEVERITY)
+# are read by the runner via `sed`, or set for the runner to read after a check
+# returns. They are intentionally "unused" within the check file itself.
+disable=SC2034
+
+# Literal "~/" appears only in user-facing messages and in `case` patterns that
+# match a leading tilde before the code expands it to $HOME explicitly. Real
+# filesystem paths always use $HOME.
+disable=SC2088
