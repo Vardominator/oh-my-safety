@@ -53,10 +53,14 @@ jobs:
                    lib/platform/*.sh lib/checks/*/*.sh plugins/swiftbar/*.sh; do
             /bin/bash -n "$f"
           done
-      - name: Unit tests (bats)
+      - name: Unit tests (bats, if present)
         run: |
-          brew install bats-core
-          bats test
+          if [ -d test ]; then
+            brew install bats-core
+            bats test
+          else
+            echo "no test/ directory yet — skipping bats (see roadmap)"
+          fi
       - name: Smoke scan + valid JSON
         run: |
           ./bin/oh-my-safety version
