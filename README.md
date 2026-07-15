@@ -16,7 +16,8 @@ Last scan:  2026-07-15T15:04Z (12s ago)
 ## Install
 
 ```bash
-# Homebrew (recommended)
+# Homebrew (recommended) — this repo is its own tap
+brew tap vardominator/oh-my-safety https://github.com/Vardominator/oh-my-safety
 brew install vardominator/oh-my-safety/oh-my-safety
 brew services start oh-my-safety      # background monitoring, runs at login
 
@@ -24,7 +25,10 @@ brew services start oh-my-safety      # background monitoring, runs at login
 curl -fsSL https://raw.githubusercontent.com/Vardominator/oh-my-safety/main/install.sh | bash
 ```
 
-Zero dependencies — pure `/bin/bash` and tools that ship with macOS.
+Zero dependencies — pure `/bin/bash` and tools that ship with macOS. (Tapping by
+URL is needed because the tap lives in the main repo rather than a separate
+`homebrew-*` repo.) See [docs/getting-started.md](docs/getting-started.md) for
+`--HEAD` and other options.
 
 ## Quickstart
 
