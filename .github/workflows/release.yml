@@ -36,24 +36,20 @@ jobs:
             dist/*.tar.gz
             dist/checksums.txt
 
-      # Bumps the formula in the dedicated tap repo (Vardominator/homebrew-oh-my-safety).
-      # Requires a fine-grained PAT with contents:write on that repo, stored as
-      # the TAP_GITHUB_TOKEN secret. Skipped automatically if the secret is absent.
-      - name: Bump Homebrew tap formula
-        if: ${{ secrets.TAP_GITHUB_TOKEN != '' }}
-        env:
-          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+      # This repo IS the Homebrew tap (users tap it by URL — see README). On each
+      # release, update Formula/oh-my-safety.rb on `main` with the new tag URL and
+      # its sha256 so `brew upgrade` picks it up.
+      - name: Bump in-repo formula on main
         run: |
           set -e
           ver="${GITHUB_REF_NAME#v}"
           sha=$(awk '{print $1}' dist/checksums.txt)
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/Vardominator/homebrew-oh-my-safety.git" tap
-          f=tap/Formula/oh-my-safety.rb
-          cp Formula/oh-my-safety.rb "$f"
+          git fetch origin main
+          git checkout main
+          f=Formula/oh-my-safety.rb
           sed -i "s|/archive/refs/tags/v[0-9.]*\.tar\.gz|/archive/refs/tags/v${ver}.tar.gz|" "$f"
           sed -i "s|sha256 \"[^\"]*\"|sha256 \"${sha}\"|" "$f"
-          cd tap
-          git config user.name "release-bot"
-          git config user.email "release-bot@users.noreply.github.com"
-          git commit -am "oh-my-safety ${ver}"
-          git push
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "Update formula for ${GITHUB_REF_NAME}" || { echo "no formula change"; exit 0; }
+          git push origin main

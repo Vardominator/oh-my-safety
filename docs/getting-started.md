@@ -2,9 +2,13 @@
 
 ## Install
 
-**Homebrew (recommended):**
+**Homebrew (recommended):** this repo doubles as its own tap, so tap it by URL
+(the tap isn't a separate `homebrew-*` repo), then install:
 ```bash
+brew tap vardominator/oh-my-safety https://github.com/Vardominator/oh-my-safety
 brew install vardominator/oh-my-safety/oh-my-safety
+# to try the latest unreleased main:
+brew install --HEAD vardominator/oh-my-safety/oh-my-safety
 ```
 If you have third-party tap-trust enabled (Homebrew 6+ with
 `HOMEBREW_REQUIRE_TAP_TRUST=1`), run `brew trust vardominator/oh-my-safety` first.
