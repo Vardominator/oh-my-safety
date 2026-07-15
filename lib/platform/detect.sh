@@ -1,5 +1,8 @@
 #!/bin/bash
-# oh-my-privacy - Platform detection utilities
+# oh-my-safety - Platform detection utilities (canonical detect_platform)
+
+[[ -n "${_OMS_DETECT_LOADED:-}" ]] && return 0
+_OMS_DETECT_LOADED=1
 
 # Detect the current platform
 detect_platform() {
