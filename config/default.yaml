@@ -1,37 +1,105 @@
-# oh-my-privacy configuration
-# Copy to ~/.config/oh-my-privacy/config.yaml to customize
+# oh-my-safety default configuration
+#
+# Copy to ~/.config/oh-my-safety/config.yaml to customize, or use the CLI:
+#   oh-my-safety disable <check|category>   # e.g. `disable privacy`
+#   oh-my-safety enable  <check|category>
+#   oh-my-safety set <path> <value>         # e.g. `set notifications.min_severity critical`
+# CLI changes are written to ~/.config/oh-my-safety/overrides.conf and take
+# precedence over this file.
+#
+# Supported YAML subset (parsed by pure bash, no dependencies):
+#   - 2-space indentation ONLY
+#   - key: scalar
+#   - block lists ("- item") indented 2 spaces under their key
+#   - full-line "# comments" and blank lines
+# NOT supported: inline {}/[], multi-line strings, anchors, tabs, trailing
+#   "# comments" after a value.
 
-version: 1
+version: 2
 
 monitoring:
-  check_interval: 60          # Full check interval (seconds)
-  fast_check_interval: 5      # Quick route check interval
-  quiet_mode: false
+  interval: 300         # seconds between full scans (daemon)
+  fast_interval: 15     # seconds between quick VPN route-flip checks (daemon)
 
 notifications:
   enabled: true
-  sound: true                 # Platform-specific sound
+  sound: true
+  min_severity: warn                # info | warn | critical
+  renotify_interval_hours: 4        # how often to re-alert an unresolved critical
+
+logging:
+  max_size_kb: 1024                 # rotate scan.log past this size
+  keep_rotations: 3
+
+# Opt-in external tools. Used ONLY when enabled here AND already installed.
+# oh-my-safety never installs or auto-updates these.
+tools:
+  gitleaks:
+    enabled: false
+  trufflehog:
+    enabled: false
+  yara:
+    enabled: false
+
+# Whole-category switches (everything on by default).
+categories:
+  privacy:
+    enabled: true
+  security:
+    enabled: true
 
 checks:
-  ip_address:
-    enabled: true
-    services:
-      - ifconfig.me
-      - api.ipify.org
-  dns_leak:
-    enabled: true
-  vpn_tunnel:
-    enabled: true
-    interfaces:
-      - utun*
-      - tun*
-      - ppp*
-      - wg*
-  routing:
-    enabled: true
-  ipv6_leak:
-    enabled: true
+  privacy:
+    ip_address:
+      enabled: true
+      services:
+        - ifconfig.me
+        - api.ipify.org
+        - icanhazip.com
+    dns_leak:
+      enabled: true
+    vpn_tunnel:
+      enabled: true
+      interfaces:
+        - utun*
+        - tun*
+        - ppp*
+        - ipsec*
+        - wg*
+    routing:
+      enabled: true
+    ipv6_leak:
+      enabled: true
 
-# Custom checks (drop-in scripts)
-# custom_checks:
-#   - path: ~/.oh-my-privacy/checks/my-check.sh
+  security:
+    hardening_posture:
+      enabled: true
+      xprotect_max_age_days: 45
+      allow_remote_login: false
+      allow_screen_sharing: false
+    process_audit:
+      enabled: true
+      osascript_phishing_detect: true
+      flag_deleted_binaries: true
+    persistence_scan:
+      enabled: true
+      login_items: true
+      btm_diff: true
+    network_exposure:
+      enabled: true
+      loopback_new_listener: info     # info | warn | off
+      ephemeral_port_floor: 49152
+    wallet_guard:
+      enabled: true
+      detect_offline_changes: daemon_only   # off | daemon_only | always
+    secrets_exposure:
+      enabled: true
+      env_scan_depth: 3
+      filename_scan: true
+    tcc_audit:
+      enabled: true
+
+# Extra directories to auto-discover custom checks from (in addition to
+# ~/.config/oh-my-safety/checks/). See docs/extending.md.
+# custom_check_paths:
+#   - ~/my-oms-checks

@@ -1,0 +1,156 @@
+#!/bin/bash
+# oh-my-safety - macOS safety & privacy monitor
+# https://github.com/Vardominator/oh-my-safety
+#
+# Continuously verifies your Mac's privacy (VPN/DNS/IP leaks) and security
+# (malicious persistence, suspicious processes, exposed secrets & crypto
+# wallets, weak hardening). Zero dependencies, nothing ever leaves your machine.
+
+set -uo pipefail
+
+# Resolve the real install directory even when invoked via a symlink.
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+while [[ -L "$SCRIPT_PATH" ]]; do
+    SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
+    SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
+    [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="$SCRIPT_DIR/$SCRIPT_PATH"
+done
+OMS_BIN="$SCRIPT_PATH"; export OMS_BIN
+OMS_ROOT="$(cd -P "$(dirname "$SCRIPT_PATH")/.." && pwd)"; export OMS_ROOT
+
+# shellcheck source=/dev/null
+source "$OMS_ROOT/lib/core.sh"
+# shellcheck source=/dev/null
+source "$OMS_ROOT/lib/runner.sh"
+for _cmd_file in "$OMS_ROOT"/lib/cmd/*.sh; do
+    # shellcheck source=/dev/null
+    [[ -f "$_cmd_file" ]] && source "$_cmd_file"
+done
+
+OMS_VERBOSE="${OMS_VERBOSE:-false}"; export OMS_VERBOSE
+OMS_QUIET="${OMS_QUIET:-false}";   export OMS_QUIET
+OMS_CONFIG_FILE_ARG=""
+
+usage() {
+    cat << EOF
+oh-my-safety v${OMS_VERSION} - macOS safety & privacy monitor
+
+USAGE:
+    oh-my-safety [GLOBAL OPTIONS] <command> [args]
+
+COMMANDS:
+    scan [--check N] [--category C] [--offline] [--deep]
+                          Run all checks once and report findings
+    monitor [--quiet]     Run continuously (used by the launchd agent)
+    status [--format F]   Show the last scan's findings (F: human|json|tsv|swiftbar)
+    checks                List every check and whether it's on/off
+    doctor                Diagnose setup, permissions, and readiness
+
+    enable  <check|cat>   Turn a check (or whole category) on
+    disable <check|cat>   Turn a check (or whole category) off
+    set <path> <value>    Set any config value (e.g. notifications.min_severity)
+
+    recheck <check>       Re-run one check to confirm a finding is resolved
+    ignore  <check> <id>  Stop flagging a specific finding you accept
+    ignored <check>       Show what's currently ignored for a check
+    accept  <check>       Accept current state as the new baseline (for drift checks)
+    baseline {list|show|approve|reset} <check>
+
+    install-agent         Install the launchd monitoring agent (non-Homebrew)
+    uninstall-agent       Remove the launchd monitoring agent
+    menubar {install|uninstall}
+                          Install the optional SwiftBar menu-bar plugin
+    version               Show version
+    help                  Show this help
+
+GLOBAL OPTIONS:
+    -c, --config FILE     Use a custom config file
+    -q, --quiet           Suppress normal output
+    -v, --verbose         Verbose/debug output
+    -h, --help            Show this help
+
+EXAMPLES:
+    oh-my-safety scan                 # one-off full scan
+    oh-my-safety disable privacy      # turn off the VPN/DNS privacy checks
+    oh-my-safety status               # what's my current safety posture?
+    oh-my-safety ignore persistence-scan 'ua:com.foo:/Users/me/run.sh'
+    brew services start oh-my-safety  # continuous background monitoring
+
+Everything runs locally. Nothing is ever uploaded. See docs/privacy.md.
+EOF
+}
+
+version() {
+    echo "oh-my-safety v${OMS_VERSION}"
+    echo "Platform: $(detect_platform)"
+}
+
+# Translate deprecated flag-style invocation into subcommands. Only rewrites
+# tokens up to the first subcommand; everything after passes through verbatim.
+translate_legacy() {
+    OMS_ARGV=()
+    local seen_cmd=0 depr=0
+    while [[ $# -gt 0 ]]; do
+        if [[ $seen_cmd -eq 1 ]]; then OMS_ARGV+=("$1"); shift; continue; fi
+        case "$1" in
+            -o|--once)      OMS_ARGV+=("scan"); seen_cmd=1; depr=1; shift ;;
+            --list-checks)  OMS_ARGV+=("checks"); seen_cmd=1; depr=1; shift ;;
+            --check)        OMS_ARGV+=("scan" "--check" "${2:-}"); seen_cmd=1; depr=1; shift 2 ;;
+            --version)      OMS_ARGV+=("version"); seen_cmd=1; shift ;;
+            -d|--daemon)
+                log_warn "--daemon is deprecated; use 'brew services start oh-my-safety' or 'oh-my-safety install-agent'"
+                OMS_ARGV+=("help"); seen_cmd=1; shift ;;
+            -c|--config)    OMS_ARGV+=("$1" "${2:-}"); shift 2 ;;
+            *)              OMS_ARGV+=("$1"); [[ "$1" != -* ]] && seen_cmd=1; shift ;;
+        esac
+    done
+    [[ $depr -eq 1 ]] && log_warn "Legacy flags are deprecated; prefer subcommands (see 'oh-my-safety help')."
+    return 0
+}
+
+main() {
+    translate_legacy "$@"
+    set -- ${OMS_ARGV[@]+"${OMS_ARGV[@]}"}
+
+    local cmd=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -c|--config)  OMS_CONFIG_FILE_ARG="${2:-}"; shift 2 ;;
+            -v|--verbose) OMS_VERBOSE=true; export OMS_VERBOSE; shift ;;
+            -q|--quiet)   OMS_QUIET=true; export OMS_QUIET; shift ;;
+            -h|--help)    usage; exit 0 ;;
+            --)           shift; break ;;
+            -*)           log_error "Unknown global option: $1"; usage; exit 3 ;;
+            *)            cmd="$1"; shift; break ;;
+        esac
+    done
+
+    [[ -z "$cmd" ]] && { usage; exit 0; }
+
+    load_config "$OMS_CONFIG_FILE_ARG" || exit 3
+
+    case "$cmd" in
+        version) version; exit 0 ;;
+        help)    usage; exit 0 ;;
+        scan)            cmd_scan "$@" ;;
+        monitor)         cmd_monitor "$@" ;;
+        status)          cmd_status "$@" ;;
+        checks)          cmd_checks "$@" ;;
+        baseline)        cmd_baseline "$@" ;;
+        doctor)          cmd_doctor "$@" ;;
+        enable)          cmd_enable "$@" ;;
+        disable)         cmd_disable "$@" ;;
+        set)             cmd_set "$@" ;;
+        ignore)          cmd_ignore "$@" ;;
+        ignored)         cmd_ignored "$@" ;;
+        recheck)         cmd_recheck "$@" ;;
+        accept|approve)  cmd_accept "$@" ;;
+        install-agent)   cmd_install_agent "$@" ;;
+        uninstall-agent) cmd_uninstall_agent "$@" ;;
+        menubar)         cmd_menubar "$@" ;;
+        *) log_error "Unknown command: $cmd"; usage; exit 3 ;;
+    esac
+    exit $?
+}
+
+main "$@"
