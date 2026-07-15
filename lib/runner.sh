@@ -166,6 +166,13 @@ run_one_check() {
         *)  status="error"; eff_sev="critical"; summary="${CHECK_FINDING_SUMMARY:-check errored (rc=$rc)}" ;;
     esac
 
+    # Whole-check mute: `oh-my-safety ignore <check>` (no finding-id) allowlists
+    # the check's own name, silencing it without disabling it entirely. This makes
+    # `ignore` meaningful even for checks that report a single whole-check finding.
+    if [[ "$status" == "warn" || "$status" == "critical" ]] && allowlist_match "$name" "$name"; then
+        status="skip"; eff_sev="info"; summary="muted by user"
+    fi
+
     _run_emit "$cat" "$name" "$status" "$eff_sev" "$summary"
 
     if [[ "$status" == "warn" || "$status" == "critical" ]]; then
