@@ -28,7 +28,7 @@ cmd_status() {
     local fmt="human"
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --format) fmt="$2"; shift 2 ;;
+            --format) fmt="${2:-human}"; shift 2 ;;
             --json) fmt="json"; shift ;;
             *) shift ;;
         esac
