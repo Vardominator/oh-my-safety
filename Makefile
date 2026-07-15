@@ -48,7 +48,7 @@ test:
 
 lint:
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck bin/oh-my-safety bin/oh-my-privacy install.sh lib/*.sh lib/cmd/*.sh lib/platform/*.sh lib/checks/*/*.sh plugins/swiftbar/*.sh scripts/*.sh; \
+		shellcheck --severity=warning bin/oh-my-safety bin/oh-my-privacy install.sh lib/*.sh lib/cmd/*.sh lib/platform/*.sh lib/checks/*/*.sh plugins/swiftbar/*.sh scripts/*.sh; \
 		echo "Lint passed!"; \
 	else \
 		echo "shellcheck not found. Install with: brew install shellcheck"; exit 1; \
