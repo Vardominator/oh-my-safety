@@ -37,7 +37,7 @@ install_tree() {
     info "Installing to $LIBDIR ..."
     rm -rf "$LIBDIR"
     mkdir -p "$LIBDIR" "$BINDIR"
-    cp -R "$tmp/src/bin" "$tmp/src/lib" "$tmp/src/config" "$LIBDIR/"
+    cp -R "$tmp/src/bin" "$tmp/src/lib" "$tmp/src/config" "$tmp/src/plugins" "$LIBDIR/"
     [ -d "$tmp/src/docs" ] && cp -R "$tmp/src/docs" "$LIBDIR/" || true
     chmod +x "$LIBDIR/bin/oh-my-safety"
 

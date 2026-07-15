@@ -24,7 +24,7 @@ help:
 install:
 	@echo "Installing oh-my-safety $(VERSION) to $(PREFIX)..."
 	@mkdir -p $(BINDIR) $(LIBDIR)
-	@cp -R bin lib config $(LIBDIR)/
+	@cp -R bin lib config plugins $(LIBDIR)/
 	@[ -d docs ] && cp -R docs $(LIBDIR)/ || true
 	@chmod +x $(LIBDIR)/bin/oh-my-safety
 	@ln -sf $(LIBDIR)/bin/oh-my-safety $(BINDIR)/oh-my-safety
