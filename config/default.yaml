@@ -99,6 +99,18 @@ checks:
     tcc_audit:
       enabled: true
 
+    # Opt-in deep scanners (off by default; also require the tool enabled
+    # under `tools:` above and installed). See docs/checks/security/.
+    secrets_content:
+      enabled: false
+      scan_roots: []
+    yara_scan:
+      enabled: false
+      rules_dir: ""
+      scan_paths:
+        - ~/Downloads
+        - /tmp
+
 # Extra directories to auto-discover custom checks from (in addition to
 # ~/.config/oh-my-safety/checks/). See docs/extending.md.
 # custom_check_paths:

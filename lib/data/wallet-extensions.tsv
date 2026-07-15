@@ -1,0 +1,19 @@
+# oh-my-safety - known browser-extension crypto-wallet IDs
+# Columns (TAB-separated): extension_id  name
+# These IDs appear under each Chromium browser profile's
+# "Local Extension Settings/<id>" and are prime infostealer targets.
+nkbihfbeogaeaoehlefnkodbefgpgknn	MetaMask
+bfnaelmomeimhlpmgjnjophhpkkoljpa	Phantom
+hnfanknocfeofbddgcijnmhnfnkdnaad	Coinbase Wallet
+egjidjbpglichdcondbcbdnbeeppgdph	Trust Wallet
+fhbohimaelbohpjbbldcngcnapndodjp	Binance Wallet
+fnjhmkhhmkbjkkabndcnnogagogbneec	Ronin Wallet
+ibnejdfjmmkpcnlpebklmnkoeoihofec	TronLink
+bhhhlbepdkbapadjdnnojkbgioiodbic	Solflare
+aeachknmefphepccionboohckonoeemg	Coin98
+aiifbnbfobpmeekipheeijimdpnlpgpp	Station (Terra)
+dmkamcknogkgcdfhhbddcghachkejeap	Keplr
+acmacodkjbdgmoleebolmdjonilkdbch	Rabby
+opcgpfmipidbgpenhmajoajpbobppdil	Sui Wallet
+mcohilncbfahbmgdjkbpemcciiolgcge	OKX Wallet
+kkpllkodjeloidieedojogacfhpaihoh	Enkrypt
