@@ -66,6 +66,21 @@ oh-my-safety ignore  persistence-scan 'login|Foo'     # accept a specific item f
 oh-my-safety accept  network-exposure                 # "yes, that new listener is mine"
 ```
 
+## Menu bar (optional)
+
+Prefer an at-a-glance icon? Run the included [SwiftBar](https://swiftbar.app) plugin:
+
+```bash
+brew install --cask swiftbar     # if you don't already have SwiftBar
+oh-my-safety menubar install     # installs the plugin and reloads SwiftBar
+```
+
+It's a thin renderer of `oh-my-safety status` — no scanning, no network — so the background agent stays the source of truth. 🛡️ = all good, ⚠️ = warnings, 🚨 = critical, 🌀 = stale/agent down.
+
+<img src="media/swiftbar.png" alt="oh-my-safety SwiftBar menu bar plugin" width="360">
+
+See [docs/menu-bar.md](docs/menu-bar.md) for details.
+
 ## Documentation
 
 Start at the **[documentation index](docs/README.md)**. Highlights:
