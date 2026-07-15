@@ -44,7 +44,8 @@ check_secrets_content() {
             # --no-verification is NON-NEGOTIABLE: trufflehog's default behavior
             # sends discovered candidate credentials to their issuing services to
             # verify them — a phone-home that violates our no-network guarantee.
-            if trufflehog filesystem "$root" --no-verification --no-update --json 2>/dev/null | grep -q .; then
+            local th_out; th_out="$(trufflehog filesystem "$root" --no-verification --no-update --json 2>/dev/null)"
+            if [[ -n "$th_out" ]]; then
                 allowlist_match secrets-content "sec-content:trufflehog:$root" || {
                     print_check_result warn "trufflehog flagged potential secrets under $root"
                     echo "  - inspect: trufflehog filesystem '$root' --no-verification   [id: sec-content:trufflehog:$root]"

@@ -10,10 +10,12 @@ cmd_install_agent() {
         log_error "install-agent is macOS-only"
         return 1
     fi
-    if launchctl list 2>/dev/null | grep -q 'homebrew.mxcl.oh-my-safety'; then
-        log_error "Already managed by Homebrew. Use: brew services {start|stop} oh-my-safety"
-        return 1
-    fi
+    local loaded; loaded="$(launchctl list 2>/dev/null)"
+    case "$loaded" in
+        *homebrew.mxcl.oh-my-safety*)
+            log_error "Already managed by Homebrew. Use: brew services {start|stop} oh-my-safety"
+            return 1 ;;
+    esac
 
     local plist logdir
     plist="$(_agent_plist_path)"
