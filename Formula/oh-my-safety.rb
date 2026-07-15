@@ -3,7 +3,7 @@ class OhMySafety < Formula
   homepage "https://github.com/Vardominator/oh-my-safety"
   url "https://github.com/Vardominator/oh-my-safety/archive/refs/tags/v0.2.1.tar.gz"
   # Filled in by the release workflow when the tag is pushed.
-  sha256 "REPLACE_WITH_RELEASE_SHA256"
+  sha256 "9a06afcbcc985d45d55ca909cce4fab7a7604cdfc977f64f8af61bc346d0a3f3"
   license "MIT"
   head "https://github.com/Vardominator/oh-my-safety.git", branch: "main"
 
