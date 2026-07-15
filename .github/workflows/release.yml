@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   release:
@@ -20,36 +21,46 @@ jobs:
           echo "tag=$tag version=$ver"
           [ "$tag" = "$ver" ] || { echo "::error::tag v$tag != OMS_VERSION $ver"; exit 1; }
 
-      - name: Build release tarball + checksum
+      - name: Checksum the tag source archive (what the formula downloads)
+        id: sha
         run: |
-          name="oh-my-safety-${GITHUB_REF_NAME}"
-          mkdir -p dist
-          git archive --format=tar.gz --prefix="oh-my-safety-${GITHUB_REF_NAME#v}/" \
-            -o "dist/${name}.tar.gz" "${GITHUB_REF_NAME}"
-          ( cd dist && shasum -a 256 "${name}.tar.gz" > checksums.txt )
-          cat dist/checksums.txt
+          url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz"
+          for i in 1 2 3 4 5; do
+            curl -fsSL "$url" -o source.tar.gz && break
+            echo "archive not ready yet, retrying..."; sleep 5
+          done
+          sha=$(shasum -a 256 source.tar.gz | awk '{print $1}')
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          printf '%s  %s\n' "$sha" "${GITHUB_REPOSITORY##*/}-${GITHUB_REF_NAME}.tar.gz" > checksums.txt
+          echo "source archive sha256=$sha"
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/*.tar.gz
-            dist/checksums.txt
+          generate_release_notes: true
+          files: checksums.txt
 
-      # This repo IS the Homebrew tap (users tap it by URL — see README). On each
-      # release, update Formula/oh-my-safety.rb on `main` with the new tag URL and
-      # its sha256 so `brew upgrade` picks it up.
-      - name: Bump in-repo formula on main
+      # main is a protected branch, so open a PR to bump the formula's sha256
+      # (the formula URL already points at the versioned tag archive). Merging it
+      # publishes the release via Homebrew.
+      - name: Open formula-bump PR
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          set -e
           ver="${GITHUB_REF_NAME#v}"
-          sha=$(awk '{print $1}' dist/checksums.txt)
-          git fetch origin main
-          git checkout main
+          sha="${{ steps.sha.outputs.sha }}"
           f=Formula/oh-my-safety.rb
           sed -i "s|/archive/refs/tags/v[0-9.]*\.tar\.gz|/archive/refs/tags/v${ver}.tar.gz|" "$f"
           sed -i "s|sha256 \"[^\"]*\"|sha256 \"${sha}\"|" "$f"
+          if git diff --quiet -- "$f"; then
+            echo "Formula already up to date."; exit 0
+          fi
+          branch="formula-bump-${GITHUB_REF_NAME}"
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -am "Update formula for ${GITHUB_REF_NAME}" || { echo "no formula change"; exit 0; }
-          git push origin main
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git commit -am "Update formula sha256 for ${GITHUB_REF_NAME}"
+          git push -u origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "Update formula for ${GITHUB_REF_NAME}" \
+            --body "Automated sha256 bump for ${GITHUB_REF_NAME}. Merge to publish the release via Homebrew."
