@@ -4,7 +4,7 @@ class OhMySafety < Formula
   url "https://github.com/Vardominator/oh-my-safety/archive/refs/tags/v0.2.0.tar.gz"
   # Filled in by the release workflow; `brew install --build-from-source` from a
   # local checkout does not need it.
-  sha256 "REPLACE_WITH_RELEASE_SHA256"
+  sha256 "abb0f9a2230b42ec24c73c10ce7b2e9d2eead761c6ad199f6c785d661bda4f6a"
   license "MIT"
   head "https://github.com/Vardominator/oh-my-safety.git", branch: "main"
 
