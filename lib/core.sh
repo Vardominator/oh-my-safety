@@ -1,327 +1,147 @@
 #!/bin/bash
-# oh-my-privacy - Core utilities
-# This file provides shared functionality for the entire application
+# oh-my-safety - Core utilities
+# Shared functionality for the entire application. Sourced by the bin entry
+# point; in turn sources the config, state, and allowlist libraries.
 
-# Version
-OMP_VERSION="0.1.0"
+[[ -n "${_OMS_CORE_LOADED:-}" ]] && return 0
+_OMS_CORE_LOADED=1
 
-# Get the directory where oh-my-privacy is installed
-OMP_ROOT="${OMP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# Single source of truth for the version (CI enforces nothing else hardcodes it)
+OMS_VERSION="0.2.0"
 
-# Colors for terminal output
+# Install root. Honors OMP_ROOT for backward compatibility.
+OMS_ROOT="${OMS_ROOT:-${OMP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}"
+export OMS_ROOT
+
+# Colors for terminal output (disabled when not a TTY)
 if [[ -t 1 ]]; then
-    GREEN='\033[0;32m'
-    YELLOW='\033[1;33m'
-    RED='\033[0;31m'
-    BLUE='\033[0;34m'
-    BOLD='\033[1m'
-    NC='\033[0m'
+    GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'
+    BLUE='\033[0;34m'; CYAN='\033[0;36m'; GRAY='\033[0;90m'
+    BOLD='\033[1m'; NC='\033[0m'
 else
-    GREEN=''
-    YELLOW=''
-    RED=''
-    BLUE=''
-    BOLD=''
-    NC=''
+    GREEN=''; YELLOW=''; RED=''; BLUE=''; CYAN=''; GRAY=''; BOLD=''; NC=''
 fi
 
-# Logging functions
-log_info() {
-    echo -e "${GREEN}[INFO]${NC} $*"
+log_info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
+log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*" >&2; }
+log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+log_debug() { [[ "${OMS_VERBOSE:-false}" == "true" ]] && echo -e "${BLUE}[DEBUG]${NC} $*" >&2 || true; }
+
+# Load the always-needed libraries
+# shellcheck source=/dev/null
+source "$OMS_ROOT/lib/platform/detect.sh"
+# shellcheck source=/dev/null
+source "$OMS_ROOT/lib/yaml.sh"
+# shellcheck source=/dev/null
+source "$OMS_ROOT/lib/state.sh"
+# shellcheck source=/dev/null
+source "$OMS_ROOT/lib/allowlist.sh"
+
+# ISO-8601 UTC timestamp
+iso_now() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
+
+# JSON-escape a string for embedding in generated JSON output.
+json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\t'/\\t}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    printf '%s' "$s"
 }
 
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $*" >&2
-}
+# Load platform-specific accessor functions. WSL reuses the Linux module.
+load_platform() {
+    local platform file
+    platform="$(detect_platform)"
+    export OMS_PLATFORM="$platform"
+    file="$OMS_ROOT/lib/platform/${platform}.sh"
+    [[ "$platform" == "wsl" ]] && file="$OMS_ROOT/lib/platform/linux.sh"
 
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $*" >&2
-}
-
-log_debug() {
-    if [[ "${OMP_VERBOSE:-false}" == "true" ]]; then
-        echo -e "${BLUE}[DEBUG]${NC} $*"
-    fi
-}
-
-# Simple YAML parser (pure bash, no external dependencies)
-# Supports basic key: value pairs and nested structures with indentation
-# Usage: yaml_get "filename" "path.to.key"
-yaml_get() {
-    local file="$1"
-    local key="$2"
-    local value=""
-
-    if [[ ! -f "$file" ]]; then
-        return 1
-    fi
-
-    # Convert dot notation to grep pattern
-    # For nested keys like "checks.ip_address.enabled"
-    local IFS='.'
-    read -ra parts <<< "$key"
-
-    local current_indent=0
-    local found_path=""
-    local in_section=true
-
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        # Skip comments and empty lines
-        [[ "$line" =~ ^[[:space:]]*# ]] && continue
-        [[ -z "${line// }" ]] && continue
-
-        # Calculate indentation
-        local stripped="${line#"${line%%[![:space:]]*}"}"
-        local indent=$(( (${#line} - ${#stripped}) / 2 ))
-
-        # Extract key and value from line
-        if [[ "$stripped" =~ ^([a-zA-Z0-9_-]+):[[:space:]]*(.*) ]]; then
-            local line_key="${BASH_REMATCH[1]}"
-            local line_value="${BASH_REMATCH[2]}"
-
-            # Build current path based on indentation
-            if [[ $indent -eq 0 ]]; then
-                found_path="$line_key"
-            elif [[ $indent -eq 1 ]]; then
-                found_path="${found_path%%.*}.$line_key"
-            elif [[ $indent -eq 2 ]]; then
-                local base="${found_path%.*}"
-                base="${base%.*}"
-                found_path="$base.${found_path#*.}.$line_key"
-                found_path="${found_path%%.*}.${found_path#*.*.}.$line_key" 2>/dev/null || found_path="$line_key"
-            fi
-
-            # Check if this matches our target key
-            if [[ "$found_path" == "$key" ]] || [[ "$line_key" == "$key" && $indent -eq 0 ]]; then
-                # Remove quotes if present
-                line_value="${line_value#\"}"
-                line_value="${line_value%\"}"
-                line_value="${line_value#\'}"
-                line_value="${line_value%\'}"
-                echo "$line_value"
-                return 0
-            fi
-        fi
-    done < "$file"
-
-    return 1
-}
-
-# Simpler approach: grep-based YAML getter for common patterns
-config_get() {
-    local key="$1"
-    local default="$2"
-    local config_file="${OMP_CONFIG_FILE:-}"
-
-    # Try user config first, then default
-    if [[ -z "$config_file" ]]; then
-        if [[ -f "$HOME/.config/oh-my-privacy/config.yaml" ]]; then
-            config_file="$HOME/.config/oh-my-privacy/config.yaml"
-        elif [[ -f "$OMP_ROOT/config/default.yaml" ]]; then
-            config_file="$OMP_ROOT/config/default.yaml"
-        else
-            echo "$default"
-            return
-        fi
-    fi
-
-    # Handle nested keys by searching for the leaf key with proper indentation
-    local result=""
-    local IFS='.'
-    read -ra parts <<< "$key"
-    # Get last element (bash 3.x compatible)
-    local leaf_key="${parts[${#parts[@]}-1]}"
-
-    # Simple grep for leaf key
-    result=$(grep -E "^[[:space:]]*${leaf_key}:" "$config_file" 2>/dev/null | head -1 | sed 's/.*:[[:space:]]*//' | sed 's/[[:space:]]*$//')
-
-    # Clean up the value
-    result="${result#\"}"
-    result="${result%\"}"
-    result="${result#\'}"
-    result="${result%\'}"
-
-    if [[ -n "$result" ]]; then
-        echo "$result"
+    if [[ -f "$file" ]]; then
+        # shellcheck source=/dev/null
+        source "$file"
+        log_debug "Loaded platform module: $platform"
     else
-        echo "$default"
+        log_warn "No platform module for: $platform (using fallbacks)"
+        send_notification() { log_warn "Notifications not supported on: $platform"; }
+        send_alert() { log_warn "Alerts not supported on: $platform"; }
     fi
 }
 
-# Check if a feature is enabled in config
-config_enabled() {
-    local key="$1"
-    local value
-    value=$(config_get "$key" "true")
-    [[ "$value" == "true" || "$value" == "yes" || "$value" == "1" ]]
-}
-
-# Load configuration file
-load_config() {
-    local config_file="${1:-}"
-
-    if [[ -n "$config_file" ]]; then
-        if [[ ! -f "$config_file" ]]; then
-            log_error "Config file not found: $config_file"
-            return 1
-        fi
-        export OMP_CONFIG_FILE="$config_file"
-    elif [[ -f "$HOME/.config/oh-my-privacy/config.yaml" ]]; then
-        export OMP_CONFIG_FILE="$HOME/.config/oh-my-privacy/config.yaml"
-    elif [[ -f "$OMP_ROOT/config/default.yaml" ]]; then
-        export OMP_CONFIG_FILE="$OMP_ROOT/config/default.yaml"
-    fi
-
-    # Load settings into environment variables
-    export OMP_CHECK_INTERVAL=$(config_get "check_interval" "60")
-    export OMP_FAST_CHECK_INTERVAL=$(config_get "fast_check_interval" "5")
-    export OMP_QUIET_MODE=$(config_get "quiet_mode" "false")
-    export OMP_NOTIFICATIONS_ENABLED=$(config_get "enabled" "true")
-    export OMP_NOTIFICATIONS_SOUND=$(config_get "sound" "true")
-
-    log_debug "Loaded config from: ${OMP_CONFIG_FILE:-defaults}"
-}
-
-# Detect platform
-detect_platform() {
-    case "$(uname -s)" in
-        Darwin)
-            echo "macos"
-            ;;
-        Linux)
-            if grep -q Microsoft /proc/version 2>/dev/null; then
-                echo "wsl"
-            else
-                echo "linux"
-            fi
-            ;;
-        MINGW*|MSYS*|CYGWIN*)
-            echo "windows"
-            ;;
-        *)
-            echo "unknown"
-            ;;
+# Numeric rank for a severity level.
+_sev_rank() {
+    case "$1" in
+        critical) echo 2 ;;
+        warn)     echo 1 ;;
+        *)        echo 0 ;;   # info
     esac
 }
 
-# Load platform-specific functions
-load_platform() {
-    local platform
-    platform=$(detect_platform)
-    local platform_file="$OMP_ROOT/lib/platform/${platform}.sh"
-
-    if [[ -f "$platform_file" ]]; then
-        # shellcheck source=/dev/null
-        source "$platform_file"
-        log_debug "Loaded platform module: $platform"
-    else
-        log_warn "No platform module for: $platform (using fallback)"
-        # Load fallback functions
-        send_notification() {
-            log_warn "Notifications not supported on this platform"
-        }
-        send_alert() {
-            log_warn "Alerts not supported on this platform"
-        }
-    fi
-}
-
-# Generic notification dispatcher
+# Simple notification dispatcher (title, message, subtitle). Gated by config.
 notify() {
-    local title="$1"
-    local message="$2"
-    local subtitle="${3:-}"
-
-    if [[ "$(config_get 'notifications.enabled' 'true')" != "true" ]]; then
-        return
-    fi
-
+    local title="$1" message="$2" subtitle="${3:-}"
+    config_enabled "notifications.enabled" "true" || return 0
     send_notification "$title" "$message" "$subtitle"
 }
 
-# Generic alert dispatcher (blocking dialog)
-alert() {
-    local title="$1"
-    local message="$2"
+# Finding-aware notification with dedupe. Console output always; OS
+# notification only when severity >= configured threshold and the finding
+# hasn't already been notified within its re-notify window.
+#   notify_finding <check> <severity> <finding_id> <title> <message>
+notify_finding() {
+    local check="$1" sev="$2" id="$3" title="$4" msg="$5"
 
-    send_alert "$title" "$message"
-}
-
-# Print a horizontal separator
-print_separator() {
-    echo "=========================================="
-}
-
-# Print a section header
-print_header() {
-    local title="$1"
-    print_separator
-    echo -e "${BOLD}$title${NC}"
-    print_separator
-}
-
-# Print check result
-print_check_result() {
-    local status="$1"  # pass, warn, fail
-    local message="$2"
-
-    case "$status" in
-        pass)
-            echo -e "${GREEN}✅ $message${NC}"
-            ;;
-        warn)
-            echo -e "${YELLOW}⚠️  $message${NC}"
-            ;;
-        fail)
-            echo -e "${RED}❌ $message${NC}"
-            ;;
-        *)
-            echo "$message"
-            ;;
+    case "$sev" in
+        critical) print_check_result critical "$msg" ;;
+        warn)     print_check_result warn "$msg" ;;
+        *)        print_check_result info "$msg" ;;
     esac
-}
 
-# Get list of available checks
-list_checks() {
-    local checks_dir="$OMP_ROOT/lib/checks"
+    config_enabled "notifications.enabled" "true" || return 0
+    local minsev; minsev="$(config_get 'notifications.min_severity' 'warn')"
+    [[ "$(_sev_rank "$sev")" -lt "$(_sev_rank "$minsev")" ]] && return 0
 
-    if [[ -d "$checks_dir" ]]; then
-        for check_file in "$checks_dir"/*.sh; do
-            if [[ -f "$check_file" ]]; then
-                local name
-                name=$(basename "$check_file" .sh)
-                echo "$name"
-            fi
-        done
-    fi
-}
-
-# Run a specific check
-run_check() {
-    local check_name="$1"
-    local check_file="$OMP_ROOT/lib/checks/${check_name}.sh"
-
-    if [[ ! -f "$check_file" ]]; then
-        log_error "Check not found: $check_name"
-        return 1
-    fi
-
-    # Check if enabled in config
-    local config_key="checks.${check_name//-/_}.enabled"
-    if ! config_enabled "$config_key"; then
-        log_debug "Check disabled: $check_name"
-        return 0
-    fi
-
-    # Source and run the check
-    # shellcheck source=/dev/null
-    source "$check_file"
-
-    # Each check file should define a run_check function
-    if type "check_${check_name//-/_}" &>/dev/null; then
-        "check_${check_name//-/_}"
+    local now last interval
+    now="$(date +%s)"
+    last="$(_notify_last_epoch "$check" "$id")"
+    if [[ "$sev" == "critical" ]]; then
+        interval=$(( $(config_get 'notifications.renotify_interval_hours' '4') * 3600 ))
     else
-        log_error "Check function not found in: $check_name"
-        return 1
+        interval=$(( 24 * 3600 ))
     fi
+
+    if [[ -z "$last" ]] || [[ $(( now - last )) -ge $interval ]]; then
+        send_notification "$title" "$msg" ""
+        _notify_record "$check" "$id" "$sev" "$now"
+    fi
+}
+
+# Blocking alert dialog
+alert() {
+    send_alert "$1" "$2"
+}
+
+print_separator() { echo "=========================================="; }
+
+print_header() {
+    print_separator
+    echo -e "${BOLD}$1${NC}"
+    print_separator
+}
+
+# Print a colored status line. Recognizes both the legacy privacy-check
+# statuses (pass/warn/fail) and the framework statuses.
+print_check_result() {
+    local status="$1" message="$2"
+    case "$status" in
+        pass|ok)   echo -e "${GREEN}✅ $message${NC}" ;;
+        info)      echo -e "${CYAN}ℹ️  $message${NC}" ;;
+        warn)      echo -e "${YELLOW}⚠️  $message${NC}" ;;
+        fail|critical) echo -e "${RED}❌ $message${NC}" ;;
+        skip)      echo -e "${GRAY}⏭️  $message${NC}" ;;
+        error)     echo -e "${RED}✗ $message${NC}" ;;
+        *)         echo "$message" ;;
+    esac
 }

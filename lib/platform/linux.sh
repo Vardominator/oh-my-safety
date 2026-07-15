@@ -1,5 +1,5 @@
 #!/bin/bash
-# oh-my-privacy - Linux platform module
+# oh-my-safety - Linux platform module
 
 # Send a Linux notification (requires libnotify or similar)
 send_notification() {

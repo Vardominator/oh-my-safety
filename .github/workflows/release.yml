@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches OMS_VERSION
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver=$(grep -o 'OMS_VERSION="[^"]*"' lib/core.sh | cut -d'"' -f2)
+          echo "tag=$tag version=$ver"
+          [ "$tag" = "$ver" ] || { echo "::error::tag v$tag != OMS_VERSION $ver"; exit 1; }
+
+      - name: Build release tarball + checksum
+        run: |
+          name="oh-my-safety-${GITHUB_REF_NAME}"
+          mkdir -p dist
+          git archive --format=tar.gz --prefix="oh-my-safety-${GITHUB_REF_NAME#v}/" \
+            -o "dist/${name}.tar.gz" "${GITHUB_REF_NAME}"
+          ( cd dist && shasum -a 256 "${name}.tar.gz" > checksums.txt )
+          cat dist/checksums.txt
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/checksums.txt
+
+      # This repo IS the Homebrew tap (users tap it by URL — see README). On each
+      # release, update Formula/oh-my-safety.rb on `main` with the new tag URL and
+      # its sha256 so `brew upgrade` picks it up.
+      - name: Bump in-repo formula on main
+        run: |
+          set -e
+          ver="${GITHUB_REF_NAME#v}"
+          sha=$(awk '{print $1}' dist/checksums.txt)
+          git fetch origin main
+          git checkout main
+          f=Formula/oh-my-safety.rb
+          sed -i "s|/archive/refs/tags/v[0-9.]*\.tar\.gz|/archive/refs/tags/v${ver}.tar.gz|" "$f"
+          sed -i "s|sha256 \"[^\"]*\"|sha256 \"${sha}\"|" "$f"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "Update formula for ${GITHUB_REF_NAME}" || { echo "no formula change"; exit 0; }
+          git push origin main

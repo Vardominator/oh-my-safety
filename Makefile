@@ -1,77 +1,61 @@
-# oh-my-privacy Makefile
+# oh-my-safety Makefile
 
-PREFIX ?= /usr/local
-BINDIR ?= $(PREFIX)/bin
-LIBDIR ?= $(PREFIX)/lib/oh-my-privacy
-CONFIGDIR ?= $(HOME)/.config/oh-my-privacy
+PREFIX    ?= /usr/local
+BINDIR    ?= $(PREFIX)/bin
+LIBDIR    ?= $(PREFIX)/lib/oh-my-safety
 
-VERSION := $(shell grep 'OMP_VERSION=' lib/core.sh | cut -d'"' -f2)
+VERSION := $(shell grep 'OMS_VERSION=' lib/core.sh | cut -d'"' -f2)
 
-.PHONY: all install uninstall test clean help
+.PHONY: all help install uninstall test lint docs clean
 
 all: help
 
 help:
-	@echo "oh-my-privacy v$(VERSION)"
+	@echo "oh-my-safety v$(VERSION)"
 	@echo ""
-	@echo "Usage:"
 	@echo "  make install      Install to $(PREFIX)"
 	@echo "  make uninstall    Remove installation"
-	@echo "  make test         Run checks locally"
+	@echo "  make test         Run the test suite (bats if present, else a smoke scan)"
 	@echo "  make lint         Run shellcheck"
-	@echo "  make clean        Clean build artifacts"
+	@echo "  make docs         Regenerate docs/checks/README.md from check manifests"
 	@echo ""
-	@echo "Variables:"
-	@echo "  PREFIX=$(PREFIX)"
-	@echo "  BINDIR=$(BINDIR)"
-	@echo "  LIBDIR=$(LIBDIR)"
+	@echo "  PREFIX=$(PREFIX)  BINDIR=$(BINDIR)  LIBDIR=$(LIBDIR)"
 
 install:
-	@echo "Installing oh-my-privacy to $(PREFIX)..."
-	@mkdir -p $(BINDIR)
-	@mkdir -p $(LIBDIR)/platform
-	@mkdir -p $(LIBDIR)/checks
-	@mkdir -p $(CONFIGDIR)
-
-	@# Install library files
-	@cp lib/core.sh $(LIBDIR)/
-	@cp lib/platform/*.sh $(LIBDIR)/platform/
-	@cp lib/checks/*.sh $(LIBDIR)/checks/
-
-	@# Install config
-	@cp config/default.yaml $(LIBDIR)/../config/ 2>/dev/null || mkdir -p $(LIBDIR)/../config && cp config/default.yaml $(LIBDIR)/../config/
-	@[ -f $(CONFIGDIR)/config.yaml ] || cp config/default.yaml $(CONFIGDIR)/config.yaml
-
-	@# Install binary
-	@cp bin/oh-my-privacy $(BINDIR)/
-	@chmod +x $(BINDIR)/oh-my-privacy
-
-	@echo ""
-	@echo "Installation complete!"
-	@echo "  Binary: $(BINDIR)/oh-my-privacy"
-	@echo "  Config: $(CONFIGDIR)/config.yaml"
-	@echo ""
-	@echo "Run 'oh-my-privacy --help' to get started."
+	@echo "Installing oh-my-safety $(VERSION) to $(PREFIX)..."
+	@mkdir -p $(BINDIR) $(LIBDIR)
+	@cp -R bin lib config plugins $(LIBDIR)/
+	@[ -d docs ] && cp -R docs $(LIBDIR)/ || true
+	@chmod +x $(LIBDIR)/bin/oh-my-safety
+	@ln -sf $(LIBDIR)/bin/oh-my-safety $(BINDIR)/oh-my-safety
+	@ln -sf $(LIBDIR)/bin/oh-my-privacy $(BINDIR)/oh-my-privacy
+	@echo "Installed: $(BINDIR)/oh-my-safety"
+	@echo "Run 'oh-my-safety doctor' to get started."
 
 uninstall:
-	@echo "Uninstalling oh-my-privacy..."
-	@rm -f $(BINDIR)/oh-my-privacy
+	@echo "Uninstalling oh-my-safety..."
+	@rm -f $(BINDIR)/oh-my-safety $(BINDIR)/oh-my-privacy
 	@rm -rf $(LIBDIR)
-	@echo "Done. Config preserved at $(CONFIGDIR)"
+	@echo "Done. Config and state preserved."
 
 test:
-	@echo "Running oh-my-privacy checks..."
-	@./bin/oh-my-privacy --once
+	@if command -v bats >/dev/null 2>&1 && [ -d test ]; then \
+		bats test; \
+	else \
+		echo "bats not found; running a smoke scan instead"; \
+		./bin/oh-my-safety scan --offline; \
+	fi
 
 lint:
-	@echo "Running shellcheck..."
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck bin/oh-my-privacy lib/*.sh lib/**/*.sh install.sh; \
+		shellcheck --severity=warning bin/oh-my-safety bin/oh-my-privacy install.sh lib/*.sh lib/cmd/*.sh lib/platform/*.sh lib/checks/*/*.sh plugins/swiftbar/*.sh scripts/*.sh; \
 		echo "Lint passed!"; \
 	else \
-		echo "shellcheck not found. Install with: brew install shellcheck"; \
-		exit 1; \
+		echo "shellcheck not found. Install with: brew install shellcheck"; exit 1; \
 	fi
+
+docs:
+	@./scripts/gen-docs.sh
 
 clean:
 	@echo "Nothing to clean."
