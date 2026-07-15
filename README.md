@@ -1,5 +1,11 @@
 # <img src="media/shield.png" alt="" width="32" height="32"> oh-my-safety
 
+[![CI](https://github.com/Vardominator/oh-my-safety/actions/workflows/ci.yml/badge.svg)](https://github.com/Vardominator/oh-my-safety/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Vardominator/oh-my-safety?sort=semver&color=brightgreen)](https://github.com/Vardominator/oh-my-safety/releases)
+[![Homebrew](https://img.shields.io/badge/homebrew-tap-orange?logo=homebrew&logoColor=white)](#install)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![macOS](https://img.shields.io/badge/macOS-12%2B-black?logo=apple&logoColor=white)
+
 **A one-stop safety monitor for your Mac.** oh-my-safety continuously verifies both your **privacy** (VPN / DNS / IP leaks) and your **security** (malicious persistence, suspicious processes, exposed secrets and crypto wallets, weak system hardening) — and it does so entirely on your machine. **Nothing is ever uploaded. No telemetry, no phone-home, ever.** ([verify it yourself](docs/privacy.md))
 
 > Formerly **oh-my-privacy** — the VPN checks are now one category alongside a full set of security checks. Existing installs keep working; see [migration notes](#upgrading-from-oh-my-privacy).

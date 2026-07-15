@@ -111,19 +111,21 @@ check_hardening_posture() {
     if config_enabled "checks.security.hardening_posture.allow_screen_sharing" "false"; then
         log_debug "screen sharing allowed in config; skipping check"
     else
-        if launchctl print system/com.apple.screensharing 2>&1 | grep -q 'state = running'; then
+        local ss_out; ss_out="$(launchctl print system/com.apple.screensharing 2>&1)"
+        case "$ss_out" in *"state = running"*)
             _hardening_flag warn "hard:screen-sharing" \
                 "Screen Sharing is running" \
-                "System Settings > General > Sharing > Screen Sharing > Off"
-        fi
+                "System Settings > General > Sharing > Screen Sharing > Off" ;;
+        esac
     fi
 
     # --- File Sharing / SMB (warn) ---
-    if launchctl print system/com.apple.smbd 2>&1 | grep -q 'state = running'; then
+    local smb_out; smb_out="$(launchctl print system/com.apple.smbd 2>&1)"
+    case "$smb_out" in *"state = running"*)
         _hardening_flag warn "hard:file-sharing" \
             "File Sharing (SMB) is running" \
-            "System Settings > General > Sharing > File Sharing > Off"
-    fi
+            "System Settings > General > Sharing > File Sharing > Off" ;;
+    esac
 
     # --- Automatic security updates (warn) ---
     # 1=on, 0=off, absent (nonzero exit -> empty) = default on (treat as pass).

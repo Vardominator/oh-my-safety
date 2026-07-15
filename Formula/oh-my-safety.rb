@@ -1,10 +1,9 @@
 class OhMySafety < Formula
   desc "macOS safety & privacy monitor: leaks, malware persistence, wallet exposure"
   homepage "https://github.com/Vardominator/oh-my-safety"
-  url "https://github.com/Vardominator/oh-my-safety/archive/refs/tags/v0.2.0.tar.gz"
-  # Filled in by the release workflow; `brew install --build-from-source` from a
-  # local checkout does not need it.
-  sha256 "abb0f9a2230b42ec24c73c10ce7b2e9d2eead761c6ad199f6c785d661bda4f6a"
+  url "https://github.com/Vardominator/oh-my-safety/archive/refs/tags/v0.2.1.tar.gz"
+  # Filled in by the release workflow when the tag is pushed.
+  sha256 "REPLACE_WITH_RELEASE_SHA256"
   license "MIT"
   head "https://github.com/Vardominator/oh-my-safety.git", branch: "main"
 

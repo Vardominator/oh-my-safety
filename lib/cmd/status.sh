@@ -15,11 +15,20 @@ _scan_age() {
     echo $(( now - epoch ))
 }
 
-_agent_running() { launchctl list 2>/dev/null | grep -q 'oh-my-safety'; }
+# Capture launchctl output then string-match: piping large output into `grep -q`
+# short-circuits and SIGPIPEs launchctl, which `set -o pipefail` would surface as
+# a false "not found".
+_agent_running() {
+    local out; out="$(launchctl list 2>/dev/null)"
+    case "$out" in *oh-my-safety*) return 0 ;; *) return 1 ;; esac
+}
 _agent_manager() {
-    if launchctl list 2>/dev/null | grep -q 'homebrew.mxcl.oh-my-safety'; then echo brew
-    elif launchctl list 2>/dev/null | grep -q 'com.vardominator.oh-my-safety'; then echo manual
-    else echo none; fi
+    local out; out="$(launchctl list 2>/dev/null)"
+    case "$out" in
+        *homebrew.mxcl.oh-my-safety*) echo brew ;;
+        *com.vardominator.oh-my-safety*) echo manual ;;
+        *) echo none ;;
+    esac
 }
 
 _count_result() { awk -F'\t' -v s="$1" '$1=="result" && $4==s{c++} END{print c+0}' "$2"; }
