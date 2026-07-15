@@ -7,7 +7,7 @@
 _OMS_CORE_LOADED=1
 
 # Single source of truth for the version (CI enforces nothing else hardcodes it)
-OMS_VERSION="0.2.0"
+OMS_VERSION="0.2.1"
 
 # Install root. Honors OMP_ROOT for backward compatibility.
 OMS_ROOT="${OMS_ROOT:-${OMP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}"
