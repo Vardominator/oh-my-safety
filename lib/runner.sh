@@ -252,6 +252,14 @@ run_scan() {
         run_one_check "$cat" "$name" "$file" || true
     done < <(checks_discover | _order_categories)
 
+    # Safety guard: a scan that produced no results means check discovery failed
+    # (broken install, wrong OMS_ROOT, a clobbered tree). Never let that look like
+    # an all-clear — record an error so status and notifications surface it.
+    if [[ -z "$OMS_SCAN_RESULTS" ]]; then
+        log_error "No checks ran — refusing to record an all-clear."
+        _run_emit "runner" "self-check" "error" "critical" "no checks ran (discovery produced nothing)"
+    fi
+
     local ok warn crit skip err exit_code
     ok="$(_count_status ok)"; warn="$(_count_status warn)"
     crit="$(_count_status critical)"; skip="$(_count_status skip)"
