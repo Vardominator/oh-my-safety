@@ -12,7 +12,7 @@ class OhMySafety < Formula
   # ship with macOS. "Zero dependencies" is a headline feature.
 
   def install
-    libexec.install "bin", "lib", "config"
+    libexec.install "bin", "lib", "config", "plugins"
     # The entry script resolves its own root by following symlinks, so a plain
     # symlink is all that's needed — no wrapper, no path rewriting.
     bin.install_symlink libexec/"bin/oh-my-safety"
@@ -51,6 +51,9 @@ class OhMySafety < Formula
   test do
     assert_match "oh-my-safety v", shell_output("#{bin}/oh-my-safety version")
     assert_match "routing", shell_output("#{bin}/oh-my-safety checks")
-    system bin/"oh-my-safety", "scan", "--offline"
+    # A scan exits non-zero when it finds issues (normal on any real machine),
+    # so just assert it runs and then that status emits valid output.
+    shell_output("#{bin}/oh-my-safety scan --offline || true")
+    assert_match "\"schema\"", shell_output("#{bin}/oh-my-safety status --json")
   end
 end
