@@ -14,11 +14,13 @@ CHECK_CONTRACT="2"
 CHECK_REQUIRES_NETWORK="false"
 CHECK_INTERVAL="86400"
 CHECK_DOC="docs/checks/security/yara-scan.md"
+CHECK_REMEDIATION="Do not open the flagged file. Quarantine or remove it, investigate its source, and recheck before ignoring any match."
 
 check_yara_scan() {
     if ! optional_tool yara; then
         print_check_result skip "YARA scan off — enable tools.yara and install yara"
         CHECK_FINDING_SUMMARY="disabled"
+        CHECK_REMEDIATION="Install YARA, enable tools.yara, configure a trusted local rules directory, then recheck."
         return 77
     fi
 
@@ -27,6 +29,7 @@ check_yara_scan() {
     if [[ -z "$rules" || ! -d "$rules" ]]; then
         print_check_result skip "no YARA rules_dir configured — set checks.security.yara_scan.rules_dir to a local rules directory"
         CHECK_FINDING_SUMMARY="no rules dir"
+        CHECK_REMEDIATION="Configure checks.security.yara_scan.rules_dir with trusted local YARA rules, then recheck."
         return 77
     fi
 

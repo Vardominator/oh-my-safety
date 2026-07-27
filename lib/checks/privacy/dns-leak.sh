@@ -10,6 +10,7 @@ CHECK_SEVERITY="warn"
 CHECK_CONTRACT="2"
 CHECK_REQUIRES_NETWORK="true"
 CHECK_DOC="docs/checks/privacy/dns-leak.md"
+CHECK_REMEDIATION="Reconnect the VPN or configure it to handle DNS, then recheck. Mute only if the resolver difference is intentional."
 
 check_dns_leak() {
     local dns_ip public_ip

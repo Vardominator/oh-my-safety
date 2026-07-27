@@ -10,6 +10,7 @@ CHECK_SEVERITY="warn"
 CHECK_CONTRACT="2"
 CHECK_REQUIRES_NETWORK="false"
 CHECK_DOC="docs/checks/privacy/vpn-tunnel.md"
+CHECK_REMEDIATION="Start or reconnect the VPN. If it uses an unrecognized interface, configure or mute this check after review."
 
 check_vpn_tunnel() {
     local interfaces iface ip found=0

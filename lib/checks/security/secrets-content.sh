@@ -12,11 +12,13 @@ CHECK_CONTRACT="2"
 CHECK_REQUIRES_NETWORK="false"
 CHECK_INTERVAL="86400"
 CHECK_DOC="docs/checks/security/secrets-content.md"
+CHECK_REMEDIATION="Inspect the redacted scanner result, rotate any exposed secret, remove it from files and history, then recheck."
 
 check_secrets_content() {
     if ! optional_tool gitleaks && ! optional_tool trufflehog; then
         print_check_result skip "content scan off — enable tools.gitleaks or tools.trufflehog and install the tool"
         CHECK_FINDING_SUMMARY="disabled"
+        CHECK_REMEDIATION="Enable and install gitleaks or trufflehog, then recheck."
         return 77
     fi
 

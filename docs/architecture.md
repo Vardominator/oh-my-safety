@@ -46,7 +46,9 @@ oh-my-safety scan
 - **Result model.** A check returns `0` (ok) / `1` (finding) / `77` (skip). The
   runner maps that plus severity to a status (`ok|warn|critical|skip|error`),
   computes an exit code (0/1/2/3), and writes a machine-readable `last-scan.tsv`.
-  `status` renders it (human/json/tsv/swiftbar) with **no** re-scanning.
+  For non-OK checks it also saves the exact human detail emitted by the check,
+  plus the manifest's remediation hint and guide path. `status` renders all of
+  that (human/json/tsv/swiftbar) with **no** re-scanning.
 - **Notifications are centralized and deduped.** Checks never notify directly; the
   runner calls `notify_finding`, which alerts once per finding and re-alerts
   criticals only on an interval — no per-scan spam from the background agent.

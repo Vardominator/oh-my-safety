@@ -9,6 +9,7 @@ CHECK_CONTRACT="2"
 CHECK_REQUIRES_NETWORK="false"
 CHECK_INTERVAL="600"
 CHECK_DOC="docs/checks/security/tcc-audit.md"
+CHECK_REMEDIATION="Revoke unexpected privacy grants in System Settings. If every grant is trusted, accept the new baseline."
 
 # Map a raw TCC service code to a human-friendly label.
 _tcc_friendly() {
@@ -60,6 +61,7 @@ check_tcc_audit() {
         print_check_result skip "reading the TCC database requires Full Disk Access"
         echo "  grant FDA to your terminal for interactive scans, or to /bin/bash for the agent, or set checks.security.tcc_audit.enabled false; see: oh-my-safety doctor"
         CHECK_FINDING_SUMMARY="needs Full Disk Access"
+        CHECK_REMEDIATION="Grant Full Disk Access to the terminal for manual scans or to /bin/bash for background coverage, then recheck."
         return 77
     fi
 

@@ -9,6 +9,7 @@ CHECK_CONTRACT="2"
 CHECK_REQUIRES_NETWORK="false"
 CHECK_INTERVAL="3600"
 CHECK_DOC="docs/checks/security/hardening-posture.md"
+CHECK_REMEDIATION="Follow each fix shown below, then recheck. Ignore only a protection you intentionally keep disabled."
 
 # --- helper: flag one misconfiguration (honors allowlist, tracks count + max severity) ---
 _hardening_flag() {

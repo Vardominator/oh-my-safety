@@ -10,6 +10,7 @@ CHECK_SEVERITY="warn"
 CHECK_CONTRACT="2"
 CHECK_REQUIRES_NETWORK="true"
 CHECK_DOC="docs/checks/privacy/ip-address.md"
+CHECK_REMEDIATION="Check internet access or complete any captive-portal login, then recheck and confirm the address belongs to your VPN."
 
 check_ip_address() {
     local ip

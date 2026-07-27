@@ -9,6 +9,7 @@ CHECK_CONTRACT="2"
 CHECK_REQUIRES_NETWORK="false"
 CHECK_INTERVAL="60"
 CHECK_DOC="docs/checks/security/process-audit.md"
+CHECK_REMEDIATION="Quit and investigate the flagged process. Treat password-prompt or unverified drop-zone findings as urgent, then recheck."
 
 # --- helpers (module-scoped; do not collide with runner globals) ---
 

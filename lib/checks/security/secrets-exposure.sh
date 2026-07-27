@@ -9,6 +9,7 @@ CHECK_CONTRACT="2"
 CHECK_REQUIRES_NETWORK="false"
 CHECK_INTERVAL="3600"
 CHECK_DOC="docs/checks/security/secrets-exposure.md"
+CHECK_REMEDIATION="Restrict secret files to mode 600 and private directories to 700, move exposed notes to protected storage, then recheck."
 
 # --- permission helpers -----------------------------------------------------
 

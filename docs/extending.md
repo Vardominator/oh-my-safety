@@ -40,6 +40,7 @@ CHECK_CONTRACT="2"                  # contract version you target (see below)
 CHECK_REQUIRES_NETWORK="false"      # true => skipped by `scan --offline`
 CHECK_INTERVAL="600"                # daemon cadence hint (seconds)
 CHECK_DOC="docs/checks/security/my-check.md"   # optional
+CHECK_REMEDIATION="Explain the safe fix, when to accept it, and how to recheck."
 ```
 
 ## The function contract
@@ -60,8 +61,12 @@ Before returning, you may set:
   severity for this run (e.g. escalate when the offending binary is unsigned).
 
 Print human detail with `print_check_result <pass|info|warn|critical|skip> "msg"`
-and indented `echo "  ..."` lines. **Do not** send notifications yourself — the
-runner does that, with de-duplication, based on your return + severity.
+and indented `echo "  ..."` lines. The runner preserves this output for non-OK
+checks, so include the concrete item, its finding ID, and any exact fix that is
+safe to display. `CHECK_REMEDIATION` supplies the general next step shown by
+human status, JSON consumers, and SwiftBar. **Do not** send notifications
+yourself — the runner does that, with de-duplication, based on your return +
+severity.
 
 ## Finding IDs, allowlists, and baselines
 

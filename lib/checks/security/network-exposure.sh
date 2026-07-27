@@ -9,6 +9,7 @@ CHECK_CONTRACT="2"
 CHECK_REQUIRES_NETWORK="false"
 CHECK_INTERVAL="60"
 CHECK_DOC="docs/checks/security/network-exposure.md"
+CHECK_REMEDIATION="Identify each listener and stop it if unexpected. If trusted, accept the new baseline or ignore only that finding."
 
 # ---------------------------------------------------------------------------
 # Finding-id scheme (stable across runs, path-based, never pid-based):
