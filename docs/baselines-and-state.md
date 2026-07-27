@@ -16,11 +16,13 @@ pending/<check>.tsv       a drifted snapshot awaiting your `accept`
 allowlist/<check>.list    finding-ids you chose to ignore (exact or glob)
 notified/<check>.tsv      notification de-dupe bookkeeping
 cache/codesign.tsv        cached code-signature verdicts (by path+inode+mtime)
-last-scan.tsv             the most recent scan result (what `status` reads)
+last-scan.tsv             summaries, exact non-OK details, and remediation hints
 log/scan.log[.1-3]        rotated local log of non-ok findings
 ```
 
-Writes are atomic (temp file + `mv`). Nothing here is ever transmitted.
+Writes are atomic (temp file + `mv`). `last-scan.tsv` is mode `600`; saved
+details can contain local paths and finding IDs, but never secret contents.
+Nothing here is ever transmitted.
 
 ## How drift detection works
 

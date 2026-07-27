@@ -9,6 +9,7 @@ CHECK_CONTRACT="2"
 CHECK_REQUIRES_NETWORK="false"
 CHECK_INTERVAL="600"
 CHECK_DOC="docs/checks/security/wallet-guard.md"
+CHECK_REMEDIATION="Use mode 600 for wallet files and 700 for directories, and move wallet data out of cloud-synced folders."
 
 # Finding-id scheme (stable, path/id based - no pids):
 #   wallet:<id>          inventory of a present desktop wallet (info)

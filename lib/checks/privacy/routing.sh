@@ -10,6 +10,7 @@ CHECK_SEVERITY="warn"
 CHECK_CONTRACT="2"
 CHECK_REQUIRES_NETWORK="false"
 CHECK_DOC="docs/checks/privacy/routing.md"
+CHECK_REMEDIATION="Connect or reconnect the VPN and confirm its tunnel owns the default route, then recheck."
 
 check_routing() {
     local route

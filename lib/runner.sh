@@ -18,6 +18,10 @@ OMS_CONTRACT_VERSION=2
 
 # Accumulator for the current scan's result records (newline-joined)
 OMS_SCAN_RESULTS=""
+# Exact human-readable output for non-OK checks. These rows are persisted next
+# to the summaries so status renderers can explain what was found without
+# re-running checks.
+OMS_SCAN_DETAILS=""
 
 # Read a manifest variable's value from a check file (without sourcing it).
 check_meta() {
@@ -79,13 +83,33 @@ _sanitize_field() { printf '%s' "$1" | tr '\t\n' '  '; }
 
 _run_emit() {
     local rec
-    rec="$(printf 'result\t%s\t%s\t%s\t%s\t%s' "$1" "$2" "$3" "$4" "$(_sanitize_field "$5")")"
+    rec="$(printf 'result\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
+        "$1" "$2" "$3" "$4" \
+        "$(_sanitize_field "$5")" "$(_sanitize_field "${6:-}")" "$(_sanitize_field "${7:-}")")"
     if [[ -z "$OMS_SCAN_RESULTS" ]]; then
         OMS_SCAN_RESULTS="$rec"
     else
         OMS_SCAN_RESULTS="$OMS_SCAN_RESULTS
 $rec"
     fi
+}
+
+# Convert captured check output into detail rows. ANSI terminal color sequences,
+# tabs, and carriage returns are removed so the state remains safe TSV.
+_run_emit_details() {
+    local cat="$1" name="$2" file="$3" line clean rec
+    [[ -f "$file" ]] || return 0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        clean="$(printf '%s' "$line" | sed $'s/\033\\[[0-9;]*m//g' | tr '\t\r' '  ')"
+        [[ -z "${clean//[[:space:]]/}" ]] && continue
+        rec="$(printf 'detail\t%s\t%s\t%s' "$cat" "$name" "$clean")"
+        if [[ -z "$OMS_SCAN_DETAILS" ]]; then
+            OMS_SCAN_DETAILS="$rec"
+        else
+            OMS_SCAN_DETAILS="$OMS_SCAN_DETAILS
+$rec"
+        fi
+    done < "$file"
 }
 
 _count_status() {
@@ -99,7 +123,7 @@ _probe_fda() {
 # Run a single discovered check, emitting its result and firing notifications.
 run_one_check() {
     local cat="$1" name="$2" file="$3"
-    local underscored func platforms severity desc contract requires_net
+    local underscored func platforms severity desc contract requires_net remediation doc
     underscored="${name//-/_}"
     func="check_${underscored}"
 
@@ -108,6 +132,8 @@ run_one_check() {
     desc="$(check_meta "$file" CHECK_DESCRIPTION)"; desc="${desc:-$name}"
     contract="$(check_meta "$file" CHECK_CONTRACT)"
     requires_net="$(check_meta "$file" CHECK_REQUIRES_NETWORK)"
+    remediation="$(check_meta "$file" CHECK_REMEDIATION)"
+    doc="$(check_meta "$file" CHECK_DOC)"
 
     # Whole-category toggle (e.g. `disable privacy`) then per-check toggle.
     if ! config_enabled "categories.${cat}.enabled" "true"; then
@@ -122,33 +148,50 @@ run_one_check() {
     if [[ -n "$platforms" && "$platforms" != "all" ]]; then
         case " $platforms " in
             *" ${OMS_PLATFORM:-} "*) : ;;
-            *) _run_emit "$cat" "$name" "skip" "info" "not supported on ${OMS_PLATFORM:-unknown}"; return 0 ;;
+            *) _run_emit "$cat" "$name" "skip" "info" "not supported on ${OMS_PLATFORM:-unknown}" \
+                "Run this check on a supported platform: $platforms." "$doc"; return 0 ;;
         esac
     fi
 
     if [[ -n "$contract" && "$contract" -gt "$OMS_CONTRACT_VERSION" ]]; then
         log_warn "Skipping $name: requires check contract v$contract (this build supports v$OMS_CONTRACT_VERSION)"
-        _run_emit "$cat" "$name" "skip" "info" "requires newer check contract v$contract"
+        _run_emit "$cat" "$name" "skip" "info" "requires newer check contract v$contract" \
+            "Upgrade oh-my-safety, then recheck." "$doc"
         return 0
     fi
 
     if [[ "${OMS_OFFLINE:-false}" == "true" && "$requires_net" == "true" ]]; then
-        _run_emit "$cat" "$name" "skip" "info" "skipped (offline mode)"
+        _run_emit "$cat" "$name" "skip" "info" "skipped (offline mode)" \
+            "Run a normal or deep scan without --offline." "$doc"
         return 0
     fi
 
+    # Initialize optional manifest fields so a custom check that omits them
+    # cannot inherit values left behind by the previously sourced check.
+    CHECK_REMEDIATION="$remediation"
+    CHECK_DOC="$doc"
     # shellcheck source=/dev/null
     source "$file"
     if ! type "$func" >/dev/null 2>&1; then
         log_error "Check $name defines no function $func()"
-        _run_emit "$cat" "$name" "error" "critical" "missing function $func"
+        _run_emit "$cat" "$name" "error" "critical" "missing function $func" "$remediation" "$doc"
         return 3
     fi
 
     CHECK_FINDING_SUMMARY=""
     CHECK_RESULT_SEVERITY=""
-    local rc=0
-    if [[ "${OMS_QUIET:-false}" == "true" ]]; then
+    remediation="${CHECK_REMEDIATION:-$remediation}"
+    doc="${CHECK_DOC:-$doc}"
+    local rc=0 detail_tmp=""
+    detail_tmp="$(mktemp "${TMPDIR:-/tmp}/oh-my-safety-check.XXXXXX" 2>/dev/null)" || detail_tmp=""
+    if [[ -n "$detail_tmp" && "${OMS_QUIET:-false}" == "true" ]]; then
+        "$func" >"$detail_tmp" 2>/dev/null; rc=$?
+    elif [[ -n "$detail_tmp" ]]; then
+        echo ""
+        echo -e "${BOLD}▸ ${desc}${NC}"
+        "$func" >"$detail_tmp"; rc=$?
+        cat "$detail_tmp"
+    elif [[ "${OMS_QUIET:-false}" == "true" ]]; then
         "$func" >/dev/null 2>&1; rc=$?
     else
         echo ""
@@ -173,7 +216,15 @@ run_one_check() {
         status="skip"; eff_sev="info"; summary="muted by user"
     fi
 
-    _run_emit "$cat" "$name" "$status" "$eff_sev" "$summary"
+    # Checks may refine remediation after observing why they warned or skipped.
+    remediation="${CHECK_REMEDIATION:-$remediation}"
+    doc="${CHECK_DOC:-$doc}"
+    _run_emit "$cat" "$name" "$status" "$eff_sev" "$summary" "$remediation" "$doc"
+    case "$status" in
+        warn|critical|error|skip)
+            [[ -n "$detail_tmp" ]] && _run_emit_details "$cat" "$name" "$detail_tmp" ;;
+    esac
+    [[ -n "$detail_tmp" ]] && rm -f "$detail_tmp"
 
     if [[ "$status" == "warn" || "$status" == "critical" ]]; then
         notify_finding "$name" "$eff_sev" "$name" "oh-my-safety: $name" "$summary"
@@ -195,6 +246,7 @@ _write_last_scan() {
         printf 'meta\tfda\t%s\n' "$(_probe_fda)"
         [[ -n "${OMS_PUBLIC_IP:-}" ]] && printf 'meta\tpublic_ip\t%s\n' "$OMS_PUBLIC_IP"
         [[ -n "$OMS_SCAN_RESULTS" ]] && printf '%s\n' "$OMS_SCAN_RESULTS"
+        [[ -n "$OMS_SCAN_DETAILS" ]] && printf '%s\n' "$OMS_SCAN_DETAILS"
     } | _state_write_atomic "$dest"
 }
 
@@ -241,6 +293,7 @@ run_scan() {
     done
 
     OMS_SCAN_RESULTS=""
+    OMS_SCAN_DETAILS=""
 
     [[ "${OMS_QUIET:-false}" == "true" ]] || print_header "oh-my-safety scan - $(iso_now)"
 
@@ -317,7 +370,7 @@ _checks_json() {
     while IFS=$'\t' read -r cat name file; do
         [[ -z "$name" ]] && continue
         if [[ $first -eq 1 ]]; then first=0; else printf ','; fi
-        printf '{"category":"%s","name":"%s","description":"%s","severity":"%s","platforms":"%s","interval":"%s","contract":"%s","doc":"%s"}' \
+        printf '{"category":"%s","name":"%s","description":"%s","severity":"%s","platforms":"%s","interval":"%s","contract":"%s","doc":"%s","remediation":"%s"}' \
             "$(json_escape "$cat")" \
             "$(json_escape "$name")" \
             "$(json_escape "$(check_meta "$file" CHECK_DESCRIPTION)")" \
@@ -325,7 +378,8 @@ _checks_json() {
             "$(json_escape "$(check_meta "$file" CHECK_PLATFORMS)")" \
             "$(json_escape "$(check_meta "$file" CHECK_INTERVAL)")" \
             "$(json_escape "$(check_meta "$file" CHECK_CONTRACT)")" \
-            "$(json_escape "$(check_meta "$file" CHECK_DOC)")"
+            "$(json_escape "$(check_meta "$file" CHECK_DOC)")" \
+            "$(json_escape "$(check_meta "$file" CHECK_REMEDIATION)")"
     done < <(checks_discover | _order_categories)
     printf ']\n'
 }

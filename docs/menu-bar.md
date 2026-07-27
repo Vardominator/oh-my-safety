@@ -26,9 +26,20 @@ scan from local state) and displays:
 | 🚨 N | N critical findings |
 | 🌀 | Scan is stale or the agent isn't running |
 
-The dropdown lists per-check summaries and offers "Run deep scan", "Full status",
-and "Refresh". Because the background agent owns scanning and notifications, the
-plugin never double-notifies.
+The dropdown is organized for action:
+
+- **Needs attention** appears first. Each warning names a concrete finding
+  (for example, “Application Firewall is disabled”) instead of only repeating a
+  count. Hover it to see every saved detail, the stable finding IDs, a suggested
+  remediation, a one-click recheck, and the full guide.
+- **Limited coverage** groups checks that were skipped because a permission or
+  tool is missing and shows how to recheck them.
+- **Healthy checks** are collapsed into a submenu so they do not bury warnings.
+
+The footer offers "Run deep scan now", "Full status", and "Refresh". Exact
+details and remediation hints come from the last scan's local state; opening the
+menu never runs a check. Because the background agent owns scanning and
+notifications, the plugin never double-notifies.
 
 ## Is SwiftBar the right choice?
 

@@ -21,6 +21,7 @@ CHECK_CONTRACT="2"                          # check-contract version you target
 CHECK_REQUIRES_NETWORK="false"
 CHECK_INTERVAL="600"                        # daemon cadence hint (seconds)
 CHECK_DOC=""                                # optional: path to a doc page
+CHECK_REMEDIATION="Explain the safe fix, when to accept it, and how to recheck."
 
 # Return: 0 = pass, 1 = finding(s), 77 = self-skip (e.g. missing permission).
 check_example_check() {

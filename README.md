@@ -81,7 +81,7 @@ brew install --cask swiftbar     # if you don't already have SwiftBar
 oh-my-safety menubar install     # installs the plugin and reloads SwiftBar
 ```
 
-It's a thin renderer of `oh-my-safety status` — no scanning, no network — so the background agent stays the source of truth. 🛡️ = all good, ⚠️ = warnings, 🚨 = critical, 🌀 = stale/agent down.
+It's a thin renderer of `oh-my-safety status` — no scanning, no network — so the background agent stays the source of truth. Warnings show the exact finding, suggested remediation, recheck action, and guide; healthy checks stay collapsed. 🛡️ = all good, ⚠️ = warnings, 🚨 = critical, 🌀 = stale/agent down.
 
 <img src="media/swiftbar.png" alt="oh-my-safety SwiftBar menu bar plugin" width="360">
 

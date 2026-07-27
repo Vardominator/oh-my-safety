@@ -9,6 +9,7 @@ CHECK_CONTRACT="2"
 CHECK_REQUIRES_NETWORK="false"
 CHECK_INTERVAL="600"
 CHECK_DOC="docs/checks/security/persistence-scan.md"
+CHECK_REMEDIATION="Remove any unexpected startup item. If trusted, accept the new baseline or ignore only that finding."
 
 # Finding-id scheme (stable, path-based; each entry doubles as its own id):
 #   launchd|<plist-path>|<program-path>

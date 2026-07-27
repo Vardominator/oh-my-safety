@@ -10,6 +10,7 @@ CHECK_SEVERITY="warn"
 CHECK_CONTRACT="2"
 CHECK_REQUIRES_NETWORK="true"
 CHECK_DOC="docs/checks/privacy/ipv6-leak.md"
+CHECK_REMEDIATION="Enable IPv6 protection in the VPN or disable IPv6 on the active network, then reconnect and recheck."
 
 check_ipv6_leak() {
     local ipv6 public_ip
