@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![macOS](https://img.shields.io/badge/macOS-12%2B-black?logo=apple&logoColor=white)
 
-**A one-stop safety monitor for your Mac.** oh-my-safety continuously verifies both your **privacy** (VPN / DNS / IP leaks) and your **security** (malicious persistence, suspicious processes, exposed secrets and crypto wallets, weak system hardening) — and it does so entirely on your machine. **Nothing is ever uploaded. No telemetry, no phone-home, ever.** ([verify it yourself](docs/privacy.md))
+**A one-stop safety monitor for your Mac in an agentic world.** oh-my-safety continuously verifies both your **privacy** (VPN / DNS / IP leaks) and your **security** (malicious persistence, suspicious processes, exposed secrets and crypto wallets, weak system hardening) — and it does so entirely on your machine. **Nothing is ever uploaded. No telemetry, no phone-home, ever.** ([verify it yourself](docs/privacy.md))
 
 > Formerly **oh-my-privacy** — the VPN checks are now one category alongside a full set of security checks. Existing installs keep working; see [migration notes](#upgrading-from-oh-my-privacy).
 
@@ -83,7 +83,13 @@ oh-my-safety menubar install     # installs the plugin and reloads SwiftBar
 
 It's a thin renderer of `oh-my-safety status` — no scanning, no network — so the background agent stays the source of truth. Warnings show the exact finding, suggested remediation, recheck action, and guide; healthy checks stay collapsed. 🛡️ = all good, ⚠️ = warnings, 🚨 = critical, 🌀 = stale/agent down.
 
-<img src="media/swiftbar.png" alt="oh-my-safety SwiftBar menu bar plugin" width="360">
+The at-a-glance overview keeps findings prioritized and healthy checks out of the way:
+
+<img src="media/swiftbar1.png" alt="SwiftBar menu showing prioritized oh-my-safety findings and collapsed healthy checks" width="900">
+
+Each finding includes the saved details, a suggested fix, a one-click recheck, and its remediation guide:
+
+<img src="media/swiftbar2.png" alt="SwiftBar finding details with remediation and recheck actions" width="900">
 
 See [docs/menu-bar.md](docs/menu-bar.md) for details.
 
