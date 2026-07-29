@@ -200,7 +200,7 @@ jobs:
           head_uri = pathlib.Path(sys.argv[2]).resolve().as_uri()
           source = formula.read_text(encoding="utf-8")
           old = 'url "https://github.com/Vardominator/oh-my-safety.git", branch: "main"'
-          new = f'url "{head_uri}", branch: "ci-head"'
+          new = f'url "{head_uri}", branch: "ci-head", using: :git'
           if source.count(old) != 1:
               raise SystemExit("unable to locate the formula HEAD source")
           formula.write_text(source.replace(old, new), encoding="utf-8")
