@@ -113,6 +113,12 @@ jobs:
           # repository; Git rejects that operation from a shallow checkout.
           fetch-depth: 0
 
+      - name: Refresh Homebrew metadata
+        # GitHub's macOS image can cache an older Homebrew API snapshot.
+        # Refresh before creating the temporary tap so the HEAD build uses the
+        # Go security patch required by go.mod.
+        run: brew update
+
       - name: Validate formula
         run: |
           ruby -c Formula/oh-my-safety.rb
@@ -206,6 +212,11 @@ jobs:
           formula.write_text(source.replace(old, new), encoding="utf-8")
           PY
           ruby -c "$tap_root/Formula/oh-my-safety.rb"
+
+          # Install explicitly so the selected compiler is visible in logs.
+          brew install go
+          go version
+
           brew install --HEAD vardominator/oh-my-safety/oh-my-safety
           oh-my-safety version
           oh-my-safety checks >/dev/null
