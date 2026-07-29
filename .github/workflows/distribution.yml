@@ -108,6 +108,10 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # The HEAD test pushes this exact revision to a local bare
+          # repository; Git rejects that operation from a shallow checkout.
+          fetch-depth: 0
 
       - name: Validate formula
         run: |
