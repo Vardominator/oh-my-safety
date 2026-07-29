@@ -1,8 +1,8 @@
 class OhMySafety < Formula
   desc "Local-first safety monitor for privacy, persistence, and exposed secrets"
   homepage "https://github.com/Vardominator/oh-my-safety"
-  url "https://github.com/Vardominator/oh-my-safety/archive/refs/tags/v0.2.3.tar.gz"
-  sha256 "e2e14501b4843dd766568c8be205c8b6a4f3f1bfc973a385c402def342e75310"
+  url "https://github.com/Vardominator/oh-my-safety/archive/refs/tags/v0.3.0.tar.gz"
+  sha256 "fc147e8ba987caba5f16ce5aa630dc439e3208851d5f884a7f1bd08d59a6ac8a"
   license "MIT"
   head do
     url "https://github.com/Vardominator/oh-my-safety.git", branch: "main"
