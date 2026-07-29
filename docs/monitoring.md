@@ -39,7 +39,7 @@ you never get double notifications.
 
 ## Start it (Linux)
 
-Release packages install a systemd user unit:
+Native release packages install a systemd user unit:
 
 ```bash
 systemctl --user daemon-reload
@@ -51,6 +51,14 @@ journalctl --user -u oh-my-safety.service -f
 Manual installs can create the same user service with
 `oh-my-safety install-agent`. See [linux.md](linux.md) for lingering after
 logout and the reason the current service deliberately does not run as root.
+
+The experimental classic Snap installs only the CLI, with no snap-managed
+daemon. After an offline scan and baseline review, explicitly run
+`oh-my-safety install-agent`; it creates and enables
+`~/.config/systemd/user/oh-my-safety.service` using the stable
+`/snap/bin/<instance>` command path. Manage it with the same `systemctl --user`
+and `journalctl --user` commands above. Run `oh-my-safety uninstall-agent`
+before removing the snap.
 
 ## Checking status
 

@@ -41,7 +41,7 @@ approval may be denied.
 | Signed APT repository | `/usr/bin`, `/usr/lib/oh-my-safety` | Package/repository setup | Out-of-band key fingerprint plus signed apt metadata | Recommended for Debian/Ubuntu after the archive is announced live |
 | Native `.deb`/`.rpm` | `/usr/bin`, `/usr/lib/oh-my-safety` | Package installation only | Release `checksums.txt` plus package-manager install | Recommended for tagged production releases |
 | Tagged installer | `~/.local` | No, after OS prerequisites | Verifies the tag source and matching portable archive against `checksums.txt` | Per-user install without a native package |
-| Experimental Snap | Snap-managed | Snap installation only | Locally built/CI artifact; classic confinement | Evaluation only; no current Store listing |
+| Experimental Snap | `/snap/bin`, plus an opt-in systemd user unit | Snap installation only | Locally built/CI artifact; classic confinement | Evaluation only; no current Store listing |
 | Source checkout | `~/.local` by default | No, after OS prerequisites | Mutable Git checkout; no release checksum | Development only |
 
 The native package and tagged installer include `oh-my-safety-agent` and
@@ -351,8 +351,9 @@ path and enables it. It intentionally runs as the current user.
 
 ## Experimental Snap package
 
-The Snapcraft recipe builds native `amd64` and `arm64` classic snaps and
-includes a user-scoped monitoring service. It is not currently available from
+The Snapcraft recipe builds native `amd64` and `arm64` classic snaps. It
+installs only the CLI: there is no snap-managed daemon and no dependency on
+Snap's experimental `user-daemons` feature. It is not currently available from
 the Snap Store. Because useful endpoint scanning needs hidden-file, process,
 network, and host-configuration access, strict confinement would create
 material blind spots; Canonical's current classic review policy may reject this
@@ -373,16 +374,20 @@ oh-my-safety doctor
 oh-my-safety scan --offline
 oh-my-safety status
 oh-my-safety baseline show linux-persistence-scan
-snap start --enable --user oh-my-safety.monitor
+oh-my-safety install-agent
+systemctl --user is-active oh-my-safety.service
 ```
 
 `--dangerous` acknowledges the local unsigned artifact; `--classic`
 acknowledges that Snap's normal sandbox is not applied. Review the first scan
-before enabling the monitor so existing malicious persistence is not silently
-treated as a trusted baseline. Configuration and state live under
-`~/snap/oh-my-safety/common/`, separate from native XDG state. See the
-[Snap packaging guide](../packaging/snap/README.md) for exact service, state,
-migration, build, uninstall, and Store-review details.
+before installing the agent so existing malicious persistence is not silently
+treated as a trusted baseline. `install-agent` creates and enables
+`~/.config/systemd/user/oh-my-safety.service` with a stable
+`/snap/bin/<instance>` command path. Manage it with `systemctl --user` and
+`journalctl --user`; configuration and state live under the snap instance's
+`~/snap/<instance>/common/`, separate from native XDG state. See the
+[Snap packaging guide](../packaging/snap/README.md) for service, refresh,
+state, migration, uninstall, and Store-review details.
 
 ## Development source checkout
 
@@ -479,6 +484,19 @@ oh-my-safety doctor
 Use only a tag that exists on the Releases page and adjust `new_release` to the
 actual version; `v0.3.1` above is an example, not a claim that it is published.
 
+### Experimental Snap
+
+Install a newer verified local artifact over a sideloaded snap. If a Store
+listing is approved in the future, use `sudo snap refresh oh-my-safety`
+instead. In either case, restart the user agent so its running process uses the
+new revision:
+
+```bash
+sudo snap install --dangerous --classic ./oh-my-safety_NEW_VERSION_ARCH.snap
+systemctl --user restart oh-my-safety.service
+oh-my-safety version
+```
+
 ## Uninstall
 
 Native package:
@@ -493,9 +511,12 @@ systemctl --user daemon-reload
 Experimental Snap:
 
 ```bash
-snap stop --user oh-my-safety.monitor 2>/dev/null || true
+oh-my-safety uninstall-agent
 sudo snap remove --purge oh-my-safety
 ```
+
+Run `uninstall-agent` first; once the snap is removed, its command cannot clean
+up `~/.config/systemd/user/oh-my-safety.service`.
 
 Default tagged-installer prefix:
 

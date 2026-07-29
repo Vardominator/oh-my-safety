@@ -6,13 +6,19 @@ _OMS_AGENT_LABEL="com.vardominator.oh-my-safety"
 _agent_plist_path() { echo "$HOME/Library/LaunchAgents/${_OMS_AGENT_LABEL}.plist"; }
 _agent_systemd_path() { echo "$HOME/.config/systemd/user/oh-my-safety.service"; }
 
-cmd_install_agent() {
+_agent_service_executable() {
     if [[ -n "${SNAP:-}" ]]; then
-        log_info "The Snap installation already includes a per-user monitoring service."
-        log_info "Start it with: snap start --user ${SNAP_INSTANCE_NAME:-oh-my-safety}.monitor"
-        return 0
+        local instance="${SNAP_INSTANCE_NAME:-oh-my-safety}"
+        case "$instance" in
+            ''|*[!a-z0-9_-]*) return 1 ;;
+        esac
+        printf '/snap/bin/%s' "$instance"
+    else
+        printf '%s' "$OMS_BIN"
     fi
+}
 
+cmd_install_agent() {
     case "$(detect_platform)" in
         macos) _install_launchd_agent ;;
         linux|wsl) _install_systemd_user_agent ;;
@@ -77,18 +83,32 @@ _install_systemd_user_agent() {
         return 1
     fi
     if systemctl --user is-active --quiet snap.oh-my-safety.monitor.service 2>/dev/null; then
-        log_error "Already managed by Snap. Use: snap {start|stop|restart} --user oh-my-safety.monitor"
+        log_error "A legacy Snap-managed monitor is still active"
+        log_error "Stop it first with: snap stop --user oh-my-safety.monitor"
         return 1
     fi
 
-    local unit escaped_bin
+    local unit service_bin escaped_bin
     unit="$(_agent_systemd_path)"
+    service_bin="$(_agent_service_executable)" || {
+        log_error "Unable to resolve a safe monitoring executable"
+        return 1
+    }
 
     # Distribution packages already install the user unit. Source/manual
-    # installs receive a per-user unit pointing at the exact current binary.
-    if ! systemctl --user cat oh-my-safety.service >/dev/null 2>&1; then
+    # installs receive a unit pointing at the exact current binary. A Snap
+    # unit uses /snap/bin so it remains valid across package refreshes.
+    if systemctl --user cat oh-my-safety.service >/dev/null 2>&1; then
+        if [[ -n "${SNAP:-}" ]] &&
+           ! systemctl --user cat oh-my-safety.service 2>/dev/null |
+               grep -Fq "ExecStart=\"$service_bin\""; then
+            log_error "A non-Snap oh-my-safety user service is already installed"
+            log_error "Remove it before enabling monitoring from the Snap"
+            return 1
+        fi
+    else
         mkdir -p "$(dirname "$unit")"
-        escaped_bin="$(printf '%s' "$OMS_BIN" | sed 's/\\/\\\\/g; s/"/\\"/g; s/%/%%/g')"
+        escaped_bin="$(printf '%s' "$service_bin" | sed 's/\\/\\\\/g; s/"/\\"/g; s/%/%%/g')"
         {
             printf '%s\n' \
                 '[Unit]' \
@@ -123,12 +143,6 @@ _install_systemd_user_agent() {
 }
 
 cmd_uninstall_agent() {
-    if [[ -n "${SNAP:-}" ]]; then
-        log_error "The Snap service is package-managed and cannot be uninstalled separately."
-        log_error "Stop it with: snap stop --user ${SNAP_INSTANCE_NAME:-oh-my-safety}.monitor"
-        return 1
-    fi
-
     case "$(detect_platform)" in
         macos) _uninstall_launchd_agent ;;
         linux|wsl) _uninstall_systemd_user_agent ;;

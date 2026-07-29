@@ -80,7 +80,10 @@ jobs:
           grep -Eq '^confinement: classic$' "$RUNNER_TEMP/snap.yaml"
           grep -Eq '^architectures:$' "$RUNNER_TEMP/snap.yaml"
           grep -Eq "^[[:space:]]*-[[:space:]]+${{ matrix.arch }}$" "$RUNNER_TEMP/snap.yaml"
-          grep -Eq '^[[:space:]]+daemon-scope: user$' "$RUNNER_TEMP/snap.yaml"
+          if grep -Eq '^[[:space:]]+daemon-scope:' "$RUNNER_TEMP/snap.yaml"; then
+            echo "::error::Snap services must not require an experimental daemon scope"
+            exit 1
+          fi
 
           sudo snap install --dangerous --classic "$SNAP_FILE"
           trap 'sudo snap remove --purge oh-my-safety >/dev/null 2>&1 || true' EXIT
@@ -89,10 +92,7 @@ jobs:
           snap run oh-my-safety checks >/dev/null
           snap run oh-my-safety set notifications.enabled false
           test -f "$HOME/snap/oh-my-safety/common/config/oh-my-safety/overrides.conf"
-
-          snap start --enable --user oh-my-safety.monitor
-          snap services oh-my-safety.monitor |
-            grep -Eq '^oh-my-safety\\.monitor[[:space:]]+enabled[[:space:]]+active'
+          snap run oh-my-safety help | grep -q 'install-agent'
 
           sudo snap remove --purge oh-my-safety
           trap - EXIT

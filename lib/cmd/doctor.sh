@@ -49,8 +49,8 @@ cmd_doctor() {
                 ;;
             linux|wsl)
                 if [[ -n "${SNAP:-}" ]]; then
-                    echo "    Start the Snap user service with:"
-                    echo "        snap start --user ${SNAP_INSTANCE_NAME:-oh-my-safety}.monitor"
+                    echo "    Install and start the per-user monitor with:"
+                    echo "        oh-my-safety install-agent"
                 else
                     echo "    Start the packaged user service with:"
                     echo "        systemctl --user enable --now oh-my-safety.service"

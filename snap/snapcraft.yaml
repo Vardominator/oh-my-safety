@@ -14,15 +14,13 @@ description: |
 license: MIT
 source-code: https://github.com/Vardominator/oh-my-safety
 issues: https://github.com/Vardominator/oh-my-safety/issues
+contact: https://github.com/Vardominator/oh-my-safety/issues
 website: https://github.com/Vardominator/oh-my-safety
 
 adopt-info: oh-my-safety
 base: core24
 grade: stable
 confinement: classic
-assumes:
-  # User-scoped snap services became generally available in snapd 2.66.
-  - snapd2.66
 
 platforms:
   amd64:
@@ -44,18 +42,6 @@ apps:
     command: bin/oh-my-safety-launcher --oms-snap-agent
   intel:
     command: bin/oh-my-safety-launcher --oms-snap-intel
-
-  monitor:
-    command: bin/oh-my-safety-launcher monitor --quiet
-    daemon: simple
-    daemon-scope: user
-    # A safety monitor must not silently bless the machine's current state as
-    # trusted. The user reviews an initial offline scan before enabling it.
-    install-mode: disable
-    restart-condition: on-failure
-    restart-delay: 10s
-    stop-timeout: 30s
-    refresh-mode: restart
 
 parts:
   oh-my-safety:

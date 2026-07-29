@@ -8,15 +8,14 @@ setup() {
     SNAP_LAUNCHER="$OMS_ROOT/packaging/snap/oh-my-safety-launcher"
 }
 
-@test "snap metadata is classic, user-scoped, opt-in, and multi-arch" {
+@test "snap metadata is classic, multi-arch, and needs no experimental daemon feature" {
     grep -Eq '^confinement:[[:space:]]+classic$' "$SNAP_RECIPE"
-    grep -Eq '^[[:space:]]+- snapd2[.]66$' "$SNAP_RECIPE"
     grep -Eq '^platforms:$' "$SNAP_RECIPE"
     grep -Eq '^[[:space:]]+amd64:$' "$SNAP_RECIPE"
     grep -Eq '^[[:space:]]+arm64:$' "$SNAP_RECIPE"
-    grep -Eq '^[[:space:]]+daemon-scope:[[:space:]]+user$' "$SNAP_RECIPE"
-    grep -Eq '^[[:space:]]+install-mode:[[:space:]]+disable$' "$SNAP_RECIPE"
-    grep -Eq '^[[:space:]]+restart-condition:[[:space:]]+on-failure$' "$SNAP_RECIPE"
+
+    run grep -Eq '^[[:space:]]+(daemon|daemon-scope):' "$SNAP_RECIPE"
+    [ "$status" -ne 0 ]
 }
 
 @test "snap version is adopted from the application source of truth" {
@@ -73,30 +72,28 @@ EOF
     [[ "$output" == *"snap runtime environment is unavailable"* ]]
 }
 
-@test "snap monitor declines to compete with an active native user service" {
+@test "snap launcher forwards monitor mode to the packaged CLI" {
     fake_snap="$BATS_TEST_TMPDIR/snap"
     common="$BATS_TEST_TMPDIR/common"
     mkdir -p "$fake_snap/usr/bin" "$fake_snap/usr/lib/oh-my-safety/bin"
 
-    cat > "$fake_snap/usr/bin/systemctl" <<'EOF'
+    cat > "$fake_snap/usr/bin/bash" <<'EOF'
 #!/bin/sh
-case "$*" in
-  "--user is-active --quiet oh-my-safety.service") exit 0 ;;
-  *) exit 1 ;;
-esac
+printf 'target=%s\n' "$1"
+printf 'arg=%s\n' "${2:-}"
 EOF
-    chmod +x "$fake_snap/usr/bin/systemctl"
+    chmod +x "$fake_snap/usr/bin/bash"
     : > "$fake_snap/usr/lib/oh-my-safety/bin/oh-my-safety"
     chmod +x "$fake_snap/usr/lib/oh-my-safety/bin/oh-my-safety"
 
     run env SNAP="$fake_snap" SNAP_USER_COMMON="$common" "$SNAP_LAUNCHER" monitor --quiet
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"native user monitor is already active"* ]]
-    [[ "$output" == *"systemctl --user disable --now oh-my-safety.service"* ]]
+    [[ "$output" == *"target=$fake_snap/usr/lib/oh-my-safety/bin/oh-my-safety"* ]]
+    [[ "$output" == *"arg=monitor"* ]]
 }
 
-@test "status recognizes the Snap-managed user monitor" {
+@test "status recognizes a legacy Snap-managed user monitor" {
     mkdir -p "$BATS_TEST_TMPDIR/mock-bin"
     cat > "$BATS_TEST_TMPDIR/mock-bin/systemctl" <<'EOF'
 #!/bin/sh
@@ -119,13 +116,83 @@ EOF
     [ "$output" = "snap" ]
 }
 
-@test "install-agent does not create a competing service inside a snap" {
+@test "snap install-agent creates a refresh-stable systemd user service" {
+    HOME="$BATS_TEST_TMPDIR/home"
+    OMS_BIN="$BATS_TEST_TMPDIR/snap/usr/lib/oh-my-safety/bin/oh-my-safety"
+    export HOME OMS_BIN
     mkdir -p "$BATS_TEST_TMPDIR/mock-bin"
     systemctl_log="$BATS_TEST_TMPDIR/systemctl.log"
     export systemctl_log
     cat > "$BATS_TEST_TMPDIR/mock-bin/systemctl" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >>"$systemctl_log"
+case "$*" in
+  "--user is-active --quiet snap.oh-my-safety.monitor.service") exit 1 ;;
+  "--user cat oh-my-safety.service") exit 1 ;;
+  *) exit 0 ;;
+esac
+EOF
+    chmod +x "$BATS_TEST_TMPDIR/mock-bin/systemctl"
+    PATH="$BATS_TEST_TMPDIR/mock-bin:$PATH"
+    export PATH
+    SNAP="$BATS_TEST_TMPDIR/snap"
+    SNAP_INSTANCE_NAME="oh-my-safety"
+    export SNAP SNAP_INSTANCE_NAME
+    detect_platform() { echo linux; }
+    source "$OMS_ROOT/lib/cmd/install-agent.sh"
+
+    run cmd_install_agent
+
+    [ "$status" -eq 0 ]
+    unit="$HOME/.config/systemd/user/oh-my-safety.service"
+    [ -f "$unit" ]
+    grep -Fq 'ExecStart="/snap/bin/oh-my-safety" monitor --quiet' "$unit"
+    grep -Fq -- "--user enable --now oh-my-safety.service" "$systemctl_log"
+}
+
+@test "snap install-agent refuses to replace a native user service" {
+    HOME="$BATS_TEST_TMPDIR/home"
+    OMS_BIN="$BATS_TEST_TMPDIR/snap/usr/lib/oh-my-safety/bin/oh-my-safety"
+    export HOME OMS_BIN
+    mkdir -p "$BATS_TEST_TMPDIR/mock-bin"
+    cat > "$BATS_TEST_TMPDIR/mock-bin/systemctl" <<'EOF'
+#!/bin/sh
+case "$*" in
+  "--user is-active --quiet snap.oh-my-safety.monitor.service") exit 1 ;;
+  "--user cat oh-my-safety.service")
+    printf '%s\n' 'ExecStart="/usr/bin/oh-my-safety" monitor --quiet'
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
+EOF
+    chmod +x "$BATS_TEST_TMPDIR/mock-bin/systemctl"
+    PATH="$BATS_TEST_TMPDIR/mock-bin:$PATH"
+    export PATH
+    SNAP="$BATS_TEST_TMPDIR/snap"
+    SNAP_INSTANCE_NAME="oh-my-safety"
+    export SNAP SNAP_INSTANCE_NAME
+    detect_platform() { echo linux; }
+    source "$OMS_ROOT/lib/cmd/install-agent.sh"
+
+    run cmd_install_agent
+
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"non-Snap oh-my-safety user service is already installed"* ]]
+    [ ! -e "$HOME/.config/systemd/user/oh-my-safety.service" ]
+}
+
+@test "snap uninstall-agent removes its user-owned service" {
+    HOME="$BATS_TEST_TMPDIR/home"
+    OMS_BIN="$BATS_TEST_TMPDIR/snap/usr/lib/oh-my-safety/bin/oh-my-safety"
+    export HOME OMS_BIN
+    mkdir -p "$HOME/.config/systemd/user" "$BATS_TEST_TMPDIR/mock-bin"
+    printf '%s\n' '[Service]' \
+        'ExecStart="/snap/bin/oh-my-safety" monitor --quiet' \
+        >"$HOME/.config/systemd/user/oh-my-safety.service"
+
+    cat > "$BATS_TEST_TMPDIR/mock-bin/systemctl" <<'EOF'
+#!/bin/sh
 exit 0
 EOF
     chmod +x "$BATS_TEST_TMPDIR/mock-bin/systemctl"
@@ -134,16 +201,16 @@ EOF
     SNAP="$BATS_TEST_TMPDIR/snap"
     SNAP_INSTANCE_NAME="oh-my-safety"
     export SNAP SNAP_INSTANCE_NAME
+    detect_platform() { echo linux; }
     source "$OMS_ROOT/lib/cmd/install-agent.sh"
 
-    run cmd_install_agent
+    run cmd_uninstall_agent
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"already includes a per-user monitoring service"* ]]
-    [ ! -e "$systemctl_log" ]
+    [ ! -e "$HOME/.config/systemd/user/oh-my-safety.service" ]
 }
 
-@test "native install-agent refuses to compete with an active Snap monitor" {
+@test "native install-agent refuses to compete with a legacy Snap monitor" {
     HOME="$BATS_TEST_TMPDIR/home"
     OMS_BIN="$HOME/.local/bin/oh-my-safety"
     export HOME OMS_BIN
@@ -168,6 +235,6 @@ EOF
     run cmd_install_agent
 
     [ "$status" -eq 1 ]
-    [[ "$output" == *"Already managed by Snap"* ]]
+    [[ "$output" == *"legacy Snap-managed monitor is still active"* ]]
     [ ! -e "$HOME/.config/systemd/user/oh-my-safety.service" ]
 }

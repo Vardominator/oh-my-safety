@@ -6,6 +6,7 @@ setup() {
 
     export HOME="$BATS_TEST_TMPDIR/home"
     export OMS_BIN="$HOME/.local/bin/oh-my-safety"
+    unset SNAP SNAP_INSTANCE_NAME
     mkdir -p "$HOME/.local/bin" "$BATS_TEST_TMPDIR/mock-bin"
     : > "$OMS_BIN"
     chmod +x "$OMS_BIN"

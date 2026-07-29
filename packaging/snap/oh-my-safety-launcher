@@ -1,5 +1,5 @@
 #!/bin/sh
-# Snap entry point shared by the CLI and per-user monitor service.
+# Snap entry point shared by the CLI and optional systemd user monitor.
 
 set -eu
 umask 077
@@ -18,7 +18,8 @@ chmod 0700 "$config_home" "$state_home" 2>/dev/null || true
 
 # Classic snaps retain the real HOME so endpoint checks inspect the user's
 # actual files. Config and state deliberately live in SNAP_USER_COMMON so the
-# CLI and user daemon share durable, revision-independent local data.
+# CLI and an explicitly installed user monitor share durable,
+# revision-independent local data.
 export XDG_CONFIG_HOME="$config_home"
 export XDG_STATE_HOME="$state_home"
 export OMS_PACKAGING="snap"
@@ -31,17 +32,6 @@ export PATH
 
 target="$runtime_root/bin/oh-my-safety"
 mode="${1:-}"
-
-# Native .deb/.rpm/source installs use a different state root and therefore a
-# different scan lock. Refuse to start a second packaged daemon when the
-# ordinary systemd user unit is already active; duplicate foreground monitors
-# cannot be identified reliably and remain a documented migration concern.
-if [ "$mode" = "monitor" ] && command -v systemctl >/dev/null 2>&1 &&
-    systemctl --user is-active --quiet oh-my-safety.service 2>/dev/null; then
-    echo "oh-my-safety: native user monitor is already active; Snap monitor will not start" >&2
-    echo "stop it first with: systemctl --user disable --now oh-my-safety.service" >&2
-    exit 0
-fi
 
 case "$mode" in
     --oms-snap-privacy)
