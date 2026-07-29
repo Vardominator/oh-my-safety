@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/Vardominator/oh-my-safety/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Vardominator/oh-my-safety/actions/workflows/ci.yml)
 [![Distribution](https://github.com/Vardominator/oh-my-safety/actions/workflows/distribution.yml/badge.svg?branch=main)](https://github.com/Vardominator/oh-my-safety/actions/workflows/distribution.yml)
+[![APT Repository](https://github.com/Vardominator/oh-my-safety/actions/workflows/apt-repository.yml/badge.svg?branch=main)](https://github.com/Vardominator/oh-my-safety/actions/workflows/apt-repository.yml)
 [![Release](https://img.shields.io/github/v/release/Vardominator/oh-my-safety?sort=semver&color=brightgreen)](https://github.com/Vardominator/oh-my-safety/releases)
 [![Homebrew](https://img.shields.io/badge/homebrew-tap-orange?logo=homebrew&logoColor=white)](#install)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -42,20 +43,24 @@ oh-my-safety doctor                   # verify permissions and notifications
 curl -fsSL https://raw.githubusercontent.com/Vardominator/oh-my-safety/main/install.sh | bash
 ```
 
-Linux:
+Linux packages are now published for `amd64` and `arm64`:
+
+- Debian/Ubuntu: follow the fingerprint-verified
+  [signed APT setup](docs/apt-repository.md#install-from-apt), then install
+  `oh-my-safety` with `apt`.
+- Fedora/RHEL or direct-package installs: follow the checksum-verified
+  [native package steps](docs/linux.md#fresh-machine-native-package).
+
+After installation:
 
 ```bash
-git clone --depth 1 https://github.com/Vardominator/oh-my-safety.git
-cd oh-my-safety
-make install PREFIX="$HOME/.local"
-export PATH="$HOME/.local/bin:$PATH"
 oh-my-safety doctor
 oh-my-safety scan --offline
 oh-my-safety install-agent
 ```
 
-Requires Git, Make, Bash, curl, and standard distro utilities. See the
-[Linux guide](docs/linux.md) for prerequisites and systemd service management.
+See the [Linux guide](docs/linux.md) for prerequisites, release assets, and
+systemd service management.
 
 ## Quickstart
 

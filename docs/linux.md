@@ -38,7 +38,7 @@ approval may be denied.
 
 | Path | Install location | Root needed | Verification | Intended use |
 |------|------------------|-------------|--------------|--------------|
-| Signed APT repository | `/usr/bin`, `/usr/lib/oh-my-safety` | Package/repository setup | Out-of-band key fingerprint plus signed apt metadata | Recommended for Debian/Ubuntu after the archive is announced live |
+| Signed APT repository | `/usr/bin`, `/usr/lib/oh-my-safety` | Package/repository setup | Out-of-band key fingerprint plus signed apt metadata | Recommended for Debian/Ubuntu |
 | Native `.deb`/`.rpm` | `/usr/bin`, `/usr/lib/oh-my-safety` | Package installation only | Release `checksums.txt` plus package-manager install | Recommended for tagged production releases |
 | Tagged installer | `~/.local` | No, after OS prerequisites | Verifies the tag source and matching portable archive against `checksums.txt` | Per-user install without a native package |
 | Experimental Snap | `/snap/bin`, plus an opt-in systemd user unit | Snap installation only | Locally built/CI artifact; classic confinement | Evaluation only; no current Store listing |
