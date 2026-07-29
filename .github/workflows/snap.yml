@@ -79,7 +79,7 @@ jobs:
           unsquashfs -cat "$SNAP_FILE" meta/snap.yaml >"$RUNNER_TEMP/snap.yaml"
           grep -Eq '^confinement: classic$' "$RUNNER_TEMP/snap.yaml"
           grep -Eq '^architectures:$' "$RUNNER_TEMP/snap.yaml"
-          grep -Eq "^  - ${{ matrix.arch }}$" "$RUNNER_TEMP/snap.yaml"
+          grep -Eq "^[[:space:]]*-[[:space:]]+${{ matrix.arch }}$" "$RUNNER_TEMP/snap.yaml"
           grep -Eq '^[[:space:]]+daemon-scope: user$' "$RUNNER_TEMP/snap.yaml"
 
           sudo snap install --dangerous --classic "$SNAP_FILE"
