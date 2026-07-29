@@ -23,8 +23,16 @@ Thumbs.db
 config/local.yaml
 
 # Build artifacts
+dist/
+/oh-my-safety-agent
+/oh-my-safety-intel
+/oh-my-safety-controller
 *.tar.gz
 *.zip
+*.snap
+/parts/
+/prime/
+/stage/
 
 # Test output
 *.log

@@ -21,6 +21,8 @@ cd oh-my-safety
 ./bin/oh-my-safety scan --offline  # deterministic (no network checks)
 make lint                          # shellcheck
 make docs                          # regenerate the checks catalog
+bats test                          # regression suite
+python3 scripts/check-docs.py      # internal links and release-doc invariants
 ```
 
 ## Project structure
@@ -52,8 +54,11 @@ Copy `lib/checks/_template.sh.example` to start.
 
 - **bash 3.2 compatible** — no `declare -A`, `mapfile`/`readarray`,
   `${x^^}`/`${x,,}`, `|&`. Files must pass `/bin/bash -n`.
-- **Security checks make no network calls** — `grep -rE 'curl|wget|/dev/tcp|nc '
-  lib/checks/security/` must return nothing.
+- **Security checks contain no direct network client calls** —
+  `grep -rE 'curl|wget|/dev/tcp|nc ' lib/checks/security/` must return nothing.
+  A network-capable check must be disabled by default, declare
+  `CHECK_REQUIRES_NETWORK=true`, and delegate only to a reviewed centralized
+  adapter with a documented disclosure contract.
 - **No sudo; degrade gracefully** — return `77` with a clear reason when a
   permission is missing rather than failing.
 - **Version is single-sourced** in `lib/core.sh` (`OMS_VERSION`); don't hardcode

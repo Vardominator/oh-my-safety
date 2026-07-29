@@ -61,6 +61,16 @@ setup() { load test_helper; _oms_setup; }
     run _notify_last_epoch c1 'id:1'; [ "$output" = "67890" ]
 }
 
+@test "notification reconciliation retains active IDs and resolves missing IDs" {
+    _notify_record c1 'id:1' warn 12345
+    _notify_record c1 'id:2' critical 12346
+    _reconcile() { printf '%s\n' 'id:1' | _notify_resolve_missing c1; }
+    run _reconcile
+    [ "$output" = "id:2" ]
+    [ "$(_notify_last_epoch c1 id:1)" = "12345" ]
+    [ -z "$(_notify_last_epoch c1 id:2)" ]
+}
+
 @test "state dir is created mode 700" {
     state_dir >/dev/null
     run stat -f '%Lp' "$OMS_STATE_DIR"

@@ -4,71 +4,159 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
+  quality:
+    name: Quality and invariants
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - name: shellcheck
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install ShellCheck
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y shellcheck
+          sudo apt-get update -qq
+          sudo apt-get install -y shellcheck
+
+      - name: ShellCheck
+        run: |
           shellcheck --severity=warning bin/oh-my-safety bin/oh-my-privacy install.sh \
             lib/*.sh lib/cmd/*.sh lib/platform/*.sh lib/checks/*/*.sh \
             plugins/swiftbar/*.sh scripts/*.sh
 
-  invariants:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: No network calls in security checks (no-phone-home gate)
+      - name: Security checks cannot phone home
         run: |
           if grep -rnE '(curl|wget|/dev/tcp|nc )' lib/checks/security/; then
-            echo "::error::security checks must not make network calls"; exit 1
+            echo "::error::security checks must not make network calls"
+            exit 1
           fi
-          echo "OK: security checks make no network calls"
-      - name: Version is single-sourced in lib/core.sh
+
+      - name: Release and compatibility invariants
         run: |
-          v=$(grep -o 'OMS_VERSION="[^"]*"' lib/core.sh | cut -d'"' -f2)
-          echo "version=$v"
-          grep -q "v${v}.tar.gz" Formula/oh-my-safety.rb || { echo "::error::formula url version != OMS_VERSION"; exit 1; }
-          if grep -rnE '[0-9]+\.[0-9]+\.[0-9]+' plugins/ --include='*.sh'; then
-            echo "::error::plugins must not hardcode a version"; exit 1
+          version=$(sed -n 's/^OMS_VERSION="\([^"]*\)"/\1/p' lib/core.sh)
+          formula_url=$(sed -n 's/^[[:space:]]*url ".*\/v\([^"]*\)\.tar\.gz"/\1/p' Formula/oh-my-safety.rb)
+          formula_sha=$(sed -n 's/^[[:space:]]*sha256 "\([^"]*\)"/\1/p' Formula/oh-my-safety.rb)
+
+          test -n "$version"
+          test -n "$formula_url"
+          printf '%s' "$formula_sha" | grep -Eq '^[0-9a-f]{64}$' || {
+            echo "::error::stable Homebrew formula must contain a real sha256"
+            exit 1
+          }
+          if grep -R "REPLACE_WITH_RELEASE_SHA256" Formula/; then
+            echo "::error::placeholder Homebrew checksums must never reach a branch"
+            exit 1
           fi
-      - name: bash 3.2 forbidden-feature scan
+          if grep -rnE '[0-9]+\.[0-9]+\.[0-9]+' plugins/ --include='*.sh'; then
+            echo "::error::plugins must not hardcode a version"
+            exit 1
+          fi
+
+      - name: Bash 3.2 compatibility scan
         run: |
           if grep -rnE 'declare -A|mapfile|readarray|\$\{[A-Za-z_]+\^\^|\$\{[A-Za-z_]+,,' \
              bin/ lib/ plugins/ scripts/ 2>/dev/null; then
-            echo "::error::found a bash 4+ construct (must stay 3.2-compatible)"; exit 1
+            echo "::error::found a bash 4+ construct (must stay 3.2-compatible)"
+            exit 1
           fi
-          echo "OK: no bash 4+ constructs"
+
+  documentation:
+    name: Documentation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Generated catalog is current
+        run: ./scripts/gen-docs.sh --check
+      - name: Documentation links and release instructions are valid
+        run: python3 scripts/check-docs.py
+
+  test-linux:
+    name: Tests (Ubuntu)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install Bats
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y bats
+      - name: Unit tests
+        run: bats test
+
+  test-go:
+    name: Portable agent core
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify module graph
+        run: go mod verify
+      - name: Reachable Go vulnerability scan
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+      - name: Unit and race tests
+        run: |
+          go test ./...
+          go test -race ./...
+      - name: Static analysis and pure-Go build
+        run: |
+          go vet ./...
+          CGO_ENABLED=0 go build -trimpath -ldflags "-X main.agentVersion=ci" -o /tmp/oh-my-safety-agent ./cmd/oh-my-safety-agent
+          CGO_ENABLED=0 go build -trimpath -o /tmp/oh-my-safety-intel ./cmd/oh-my-safety-intel
+          CGO_ENABLED=0 go build -trimpath -o /tmp/oh-my-safety-controller ./cmd/oh-my-safety-controller
+          /tmp/oh-my-safety-agent --state-db "$RUNNER_TEMP/journal.db" |
+            python3 -m json.tool >/dev/null
+          /tmp/oh-my-safety-controller \
+            -bootstrap \
+            -admin-config "$RUNNER_TEMP/controller-admins.json" \
+            -signing-key "$RUNNER_TEMP/controller-signing.json" |
+            python3 -m json.tool >/dev/null
+          /tmp/oh-my-safety-intel help | python3 -m json.tool >/dev/null
 
   test-macos:
-    runs-on: macos-latest
+    name: Tests (macOS)
+    runs-on: macos-14
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - name: Parse everything under /bin/bash (3.2)
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Parse with the system Bash
         run: |
-          for f in bin/oh-my-safety bin/oh-my-privacy lib/*.sh lib/cmd/*.sh \
-                   lib/platform/*.sh lib/checks/*/*.sh plugins/swiftbar/*.sh; do
-            /bin/bash -n "$f"
+          for file in bin/oh-my-safety bin/oh-my-privacy lib/*.sh lib/cmd/*.sh \
+                      lib/platform/*.sh lib/checks/*/*.sh plugins/swiftbar/*.sh; do
+            /bin/bash -n "$file"
           done
-      - name: Unit tests (bats, if present)
+
+      - name: Unit tests
         run: |
-          if [ -d test ]; then
-            brew install bats-core
-            bats test
-          else
-            echo "no test/ directory yet — skipping bats (see roadmap)"
-          fi
-      - name: Smoke scan + valid JSON
+          brew install bats-core
+          bats test
+
+      - name: Smoke scan and status contracts
         run: |
           ./bin/oh-my-safety version
           ./bin/oh-my-safety checks
-          # A scan exits non-zero when it finds warnings/critical items (expected
-          # on any real machine); we only assert it runs and emits valid JSON.
-          ./bin/oh-my-safety scan --offline || true
-          ./bin/oh-my-safety status --json | python3 -m json.tool > /dev/null
-          ./bin/oh-my-safety status --format tsv > /dev/null
-      - name: Docs catalog is current
-        run: ./scripts/gen-docs.sh --check
+          set +e
+          ./bin/oh-my-safety scan --offline
+          scan_status=$?
+          set -e
+          if [ "$scan_status" -gt 2 ]; then
+            echo "::error::scan failed with execution status $scan_status"
+            exit "$scan_status"
+          fi
+          ./bin/oh-my-safety status --json | python3 -m json.tool >/dev/null
+          ./bin/oh-my-safety status --format tsv >/dev/null
+          ./bin/oh-my-safety status --format swiftbar >/dev/null

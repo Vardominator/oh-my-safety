@@ -1,0 +1,518 @@
+name: APT Repository
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/apt-repository.yml"
+      - "bin/**"
+      - "cmd/**"
+      - "config/**"
+      - "go.mod"
+      - "go.sum"
+      - "internal/**"
+      - "lib/**"
+      - "packaging/apt/**"
+      - "packaging/nfpm.yaml"
+      - "packaging/systemd/**"
+      - "plugins/**"
+      - "scripts/build-apt-repository.sh"
+      - "scripts/build-linux-packages.sh"
+      - "scripts/verify-apt-repository.sh"
+      - "scripts/verify-github-tag.sh"
+      - "test/apt_repository.bats"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/apt-repository.yml"
+      - "bin/**"
+      - "cmd/**"
+      - "config/**"
+      - "go.mod"
+      - "go.sum"
+      - "internal/**"
+      - "lib/**"
+      - "packaging/apt/**"
+      - "packaging/nfpm.yaml"
+      - "packaging/systemd/**"
+      - "plugins/**"
+      - "scripts/build-apt-repository.sh"
+      - "scripts/build-linux-packages.sh"
+      - "scripts/verify-apt-repository.sh"
+      - "scripts/verify-github-tag.sh"
+      - "test/apt_repository.bats"
+  schedule:
+    # Refresh Valid-Until before it expires. Publication remains opt-in below.
+    - cron: "17 5 1,15 * *"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Published release tag to index; blank selects the latest"
+        required: false
+        type: string
+      publish:
+        description: "Sign with the protected archive key and deploy to Pages"
+        required: true
+        default: false
+        type: boolean
+permissions:
+  contents: read
+
+concurrency:
+  group: apt-repository-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    name: Build and verify with an ephemeral key
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install repository tooling
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y apt-utils gnupg
+          GOTOOLCHAIN=local go install \
+            github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
+
+      - name: Build Debian packages
+        run: |
+          OMS_PACKAGE_ARCH=amd64 ./scripts/build-linux-packages.sh
+          OMS_PACKAGE_ARCH=arm64 ./scripts/build-linux-packages.sh
+
+      - name: Build signed test repository
+        env:
+          GNUPGHOME: ${{ runner.temp }}/apt-test-gnupg
+        run: |
+          mkdir -m 0700 "$GNUPGHOME"
+          gpg --batch --passphrase '' --quick-gen-key \
+            "oh-my-safety APT CI <apt-ci@example.invalid>" ed25519 sign 1d
+          fingerprint=$(
+            gpg --batch --with-colons --list-secret-keys |
+              awk -F: '$1 == "fpr" { print $10; exit }'
+          )
+          version=$(sed -n 's/^OMS_VERSION="\([^"]*\)"/\1/p' lib/core.sh)
+          ./scripts/build-apt-repository.sh \
+            --packages dist \
+            --output site/apt \
+            --version "$version" \
+            --signing-key "$fingerprint"
+          ./scripts/verify-apt-repository.sh \
+            --repository site/apt \
+            --keyring site/apt/oh-my-safety-archive-keyring.gpg
+
+      - name: Install from the signed test repository
+        run: |
+          docker run --rm \
+            -v "$PWD/site/apt:/repo:ro" \
+            ubuntu:24.04 bash -euxc '
+              install -d -m 0755 /etc/apt/keyrings
+              install -m 0644 \
+                /repo/oh-my-safety-archive-keyring.gpg \
+                /etc/apt/keyrings/oh-my-safety-archive-keyring.gpg
+              cat >/etc/apt/sources.list.d/oh-my-safety.sources <<EOF
+          Types: deb
+          URIs: file:/repo
+          Suites: stable
+          Components: main
+          Architectures: amd64
+          Signed-By: /etc/apt/keyrings/oh-my-safety-archive-keyring.gpg
+          EOF
+              apt-get update
+              apt-get install -y oh-my-safety
+              oh-my-safety version
+              oh-my-safety checks >/dev/null
+            '
+
+      - name: Upload validation repository
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: apt-repository-validation
+          path: site/apt
+          if-no-files-found: error
+          retention-days: 7
+
+  build-production:
+    name: Sign release repository
+    needs: validate
+    if: >-
+      github.repository == 'Vardominator/oh-my-safety' &&
+      github.ref == 'refs/heads/main' &&
+      vars.APT_REPOSITORY_ENABLED == 'true' &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: apt-signing
+    permissions:
+      attestations: read
+      contents: read
+      pages: read
+    env:
+      APT_SIGNING_FINGERPRINT: ${{ vars.APT_SIGNING_FINGERPRINT }}
+      APT_REPOSITORY_URL: ${{ vars.APT_REPOSITORY_URL }}
+      APT_ALLOW_INITIAL_PUBLISH: ${{ vars.APT_ALLOW_INITIAL_PUBLISH }}
+      APT_REPOSITORY_INITIALIZED: ${{ vars.APT_REPOSITORY_INITIALIZED }}
+      REQUESTED_TAG: ${{ inputs.release_tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Install repository tooling
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y apt-utils gnupg
+
+      - name: Download and verify release packages
+        id: release
+        run: |
+          tag="$REQUESTED_TAG"
+          if [ -z "$tag" ]; then
+            tag=$(gh release view --json tagName --jq .tagName)
+          fi
+          printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$' || {
+            echo "::error::invalid release tag: $tag"
+            exit 1
+          }
+          test "$(gh release view "$tag" --json isDraft --jq .isDraft)" = "false"
+          test "$(gh release view "$tag" --json isPrerelease --jq .isPrerelease)" = "false"
+          ./scripts/verify-github-tag.sh "$tag" "$GITHUB_REPOSITORY"
+          gh release verify "$tag"
+
+          mkdir release-assets
+          gh release download "$tag" \
+            --dir release-assets \
+            --pattern 'oh-my-safety_*_*.deb' \
+            --pattern checksums.txt
+          gh release verify-asset "$tag" release-assets/checksums.txt
+
+          for arch in amd64 arm64; do
+            asset="oh-my-safety_${tag#v}_${arch}.deb"
+            test -f "release-assets/$asset" || {
+              echo "::error::release is missing $asset"
+              exit 1
+            }
+            expected=$(
+              awk -v asset="$asset" '$2 == asset { print $1 }' \
+                release-assets/checksums.txt
+            )
+            printf '%s' "$expected" | grep -Eq '^[0-9a-f]{64}$' || {
+              echo "::error::checksums.txt has no unique SHA256 for $asset"
+              exit 1
+            }
+            printf '%s  %s\n' "$expected" "release-assets/$asset" |
+              sha256sum --check -
+            gh release verify-asset "$tag" "release-assets/$asset"
+          done
+          test "$(
+            find release-assets -maxdepth 1 -type f -name '*.deb' | wc -l
+          )" -eq 2
+
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >>"$GITHUB_OUTPUT"
+
+      - name: Resolve repository URL
+        run: |
+          repository_url="$APT_REPOSITORY_URL"
+          if [ -z "$repository_url" ]; then
+            repository_url="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/apt"
+          fi
+          repository_url="${repository_url%/}"
+          printf '%s' "$repository_url" |
+            grep -Eq '^https://[0-9A-Za-z][0-9A-Za-z./:_-]*$' || {
+              echo "::error::APT_REPOSITORY_URL must be a simple HTTPS URL"
+              exit 1
+            }
+          echo "OMS_APT_REPOSITORY_URL=$repository_url" >>"$GITHUB_ENV"
+
+      - name: Import the protected archive key
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+          APT_SIGNING_KEY_PASSPHRASE: ${{ secrets.APT_SIGNING_KEY_PASSPHRASE }}
+          GNUPGHOME: ${{ runner.temp }}/apt-production-gnupg
+        run: |
+          test -n "$APT_SIGNING_KEY" || {
+            echo "::error::APT_SIGNING_KEY is not configured in apt-signing"
+            exit 1
+          }
+          printf '%s' "$APT_SIGNING_FINGERPRINT" |
+            tr -d '[:space:]' |
+            grep -Eq '^[0-9A-Fa-f]{40}$' || {
+              echo "::error::APT_SIGNING_FINGERPRINT must be a full fingerprint"
+              exit 1
+            }
+          normalized_fingerprint=$(
+            printf '%s' "$APT_SIGNING_FINGERPRINT" |
+              tr -d '[:space:]' |
+              tr '[:lower:]' '[:upper:]'
+          )
+          echo "APT_SIGNING_FINGERPRINT=$normalized_fingerprint" >>"$GITHUB_ENV"
+
+          umask 077
+          mkdir -m 0700 "$GNUPGHOME"
+          printf '%s' "$APT_SIGNING_KEY" >"$GNUPGHOME/archive-key.asc"
+          gpg --batch --import "$GNUPGHOME/archive-key.asc"
+          gpg --batch --with-colons --list-secret-keys "$normalized_fingerprint" |
+            awk -F: -v expected="$normalized_fingerprint" '
+              $1 == "fpr" {
+                if (toupper($10) != expected) exit 1
+                found = 1
+                exit
+              }
+              END { if (!found) exit 1 }
+            '
+          rm -f "$GNUPGHOME/archive-key.asc"
+          if [ -n "$APT_SIGNING_KEY_PASSPHRASE" ]; then
+            printf '%s' "$APT_SIGNING_KEY_PASSPHRASE" \
+              >"$GNUPGHOME/passphrase"
+            chmod 0600 "$GNUPGHOME/passphrase"
+          fi
+
+      - name: Verify previous state and retain its by-hash indexes
+        env:
+          GNUPGHOME: ${{ runner.temp }}/apt-production-gnupg
+          NEW_TAG: ${{ steps.release.outputs.tag }}
+          NEW_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          previous="$RUNNER_TEMP/previous-apt"
+          mkdir -p "$previous/dists/stable"
+          gpg --batch --export-options export-minimal \
+            --export "$APT_SIGNING_FINGERPRINT" >"$previous/archive-key.gpg"
+
+          set +e
+          previous_http_status=$(
+            curl --proto '=https' --tlsv1.2 -sS \
+              --connect-timeout 15 --max-time 60 \
+              --output "$previous/dists/stable/InRelease" \
+              --write-out '%{http_code}' \
+              "$OMS_APT_REPOSITORY_URL/dists/stable/InRelease"
+          )
+          previous_curl_status=$?
+          set -e
+
+          if [ "$previous_curl_status" -ne 0 ]; then
+            echo "::error::failed to retrieve existing repository (curl=$previous_curl_status, HTTP=$previous_http_status)"
+            exit 1
+          fi
+          if [ "$previous_http_status" = 404 ]; then
+            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] &&
+               [ "$APT_ALLOW_INITIAL_PUBLISH" = true ] &&
+               [ "$APT_REPOSITORY_INITIALIZED" != true ]; then
+              latest_tag="$(gh release view --json tagName --jq .tagName)"
+              test "$NEW_TAG" = "$latest_tag" || {
+                echo "::error::initial publication must use latest release $latest_tag"
+                exit 1
+              }
+              echo "Exact HTTP 404 confirmed; protected one-time initialization is authorized."
+              rm -rf "$previous"
+              exit 0
+            fi
+            echo "::error::repository is missing; one-time initialization is not authorized"
+            exit 1
+          fi
+          if [ "$previous_http_status" != 200 ]; then
+            echo "::error::existing repository returned HTTP $previous_http_status"
+            exit 1
+          fi
+
+          gpgv --keyring "$previous/archive-key.gpg" \
+            --output "$previous/dists/stable/Release" \
+            "$previous/dists/stable/InRelease"
+          grep -Fx 'Origin: oh-my-safety' \
+            "$previous/dists/stable/Release" >/dev/null
+          grep -Fx 'Acquire-By-Hash: yes' \
+            "$previous/dists/stable/Release" >/dev/null
+
+          curl --proto '=https' --tlsv1.2 -fsSL \
+            --connect-timeout 15 --max-time 60 --max-filesize 1048576 \
+            "$OMS_APT_REPOSITORY_URL/by-hash-manifest.txt" \
+            -o "$previous/by-hash-manifest.txt"
+          test "$(
+            sed '/^[[:space:]]*$/d' "$previous/by-hash-manifest.txt" |
+              wc -l
+          )" -le 1000
+
+          while IFS=$'\t' read -r digest relative; do
+            [ -n "$digest" ] || continue
+            printf '%s' "$digest" | grep -Eq '^[0-9a-f]{64}$'
+            case "$relative" in
+              "dists/stable/main/binary-amd64/by-hash/SHA256/$digest" | \
+              "dists/stable/main/binary-arm64/by-hash/SHA256/$digest")
+                ;;
+              *)
+                echo "::error::unsafe by-hash manifest path: $relative"
+                exit 1
+                ;;
+            esac
+            target="$previous/$relative"
+            mkdir -p "$(dirname "$target")"
+            curl --proto '=https' --tlsv1.2 -fsSL \
+              --connect-timeout 15 --max-time 60 --max-filesize 10485760 \
+              "$OMS_APT_REPOSITORY_URL/$relative" \
+              -o "$target"
+            printf '%s  %s\n' "$digest" "$target" | sha256sum --check -
+          done <"$previous/by-hash-manifest.txt"
+
+          awk '
+            $0 == "SHA256:" { found = 1; next }
+            found && /^[^ ]/ { exit }
+            found && $3 ~ /^main\/binary-(amd64|arm64)\/(Packages|Packages\.gz)$/ {
+              print $1 "\t" $3
+            }
+          ' "$previous/dists/stable/Release" |
+          while IFS=$'\t' read -r digest relative; do
+            directory=$(dirname "$relative")
+            test -f \
+              "$previous/dists/stable/$directory/by-hash/SHA256/$digest"
+          done
+
+          for arch in amd64 arm64; do
+            digest=$(
+              awk -v path="main/binary-$arch/Packages" '
+                $0 == "SHA256:" { found = 1; next }
+                found && /^[^ ]/ { exit }
+                found && $3 == path { print $1 }
+              ' "$previous/dists/stable/Release"
+            )
+            packages="$previous/dists/stable/main/binary-$arch/by-hash/SHA256/$digest"
+            old_version=$(sed -n 's/^Version: //p' "$packages")
+            old_package_sha=$(sed -n 's/^SHA256: //p' "$packages")
+            test -n "$old_version"
+            test -n "$old_package_sha"
+            dpkg --compare-versions "$NEW_VERSION" ge "$old_version" || {
+              echo "::error::refusing version rollback from $old_version to $NEW_VERSION"
+              exit 1
+            }
+            if dpkg --compare-versions "$NEW_VERSION" eq "$old_version"; then
+              new_sha=$(
+                sha256sum "release-assets/oh-my-safety_${NEW_VERSION}_${arch}.deb" |
+                  awk '{ print $1 }'
+              )
+              test "$new_sha" = "$old_package_sha" || {
+                echo "::error::same-version package digest changed for $arch"
+                exit 1
+              }
+            fi
+          done
+
+      - name: Build and verify production repository
+        env:
+          GNUPGHOME: ${{ runner.temp }}/apt-production-gnupg
+        run: |
+          passphrase_args=()
+          if [ -s "$GNUPGHOME/passphrase" ]; then
+            passphrase_args=(--passphrase-file "$GNUPGHOME/passphrase")
+          fi
+          ./scripts/build-apt-repository.sh \
+            --packages release-assets \
+            --output site/apt \
+            --version "${{ steps.release.outputs.version }}" \
+            --signing-key "$APT_SIGNING_FINGERPRINT" \
+            "${passphrase_args[@]}"
+
+          if [ -d "$RUNNER_TEMP/previous-apt/dists" ]; then
+            while IFS= read -r previous_object; do
+              relative="${previous_object#"$RUNNER_TEMP/previous-apt/"}"
+              target="site/apt/$relative"
+              mkdir -p "$(dirname "$target")"
+              if [ ! -e "$target" ]; then
+                cp "$previous_object" "$target"
+              fi
+            done < <(
+              find "$RUNNER_TEMP/previous-apt/dists" \
+                -type f -path '*/by-hash/SHA256/*' -print
+            )
+          fi
+
+          : >site/apt/by-hash-manifest.txt
+          while IFS= read -r by_hash_object; do
+            digest="$(basename "$by_hash_object")"
+            relative="${by_hash_object#site/apt/}"
+            printf '%s\t%s\n' "$digest" "$relative" \
+              >>site/apt/by-hash-manifest.txt
+          done < <(
+            find site/apt/dists/stable \
+              -type f -path '*/by-hash/SHA256/*' -print |
+              LC_ALL=C sort
+          )
+          test -s site/apt/by-hash-manifest.txt
+
+          ./scripts/verify-apt-repository.sh \
+            --repository site/apt \
+            --keyring site/apt/oh-my-safety-archive-keyring.gpg
+
+          cp packaging/apt/index.html site/index.html
+          touch site/.nojekyll
+          {
+            echo "### APT repository"
+            echo
+            echo "- Release: ${{ steps.release.outputs.tag }}"
+            echo "- URL: $OMS_APT_REPOSITORY_URL"
+            echo -n "- Signing fingerprint: \`"
+            cat site/apt/oh-my-safety-archive-keyring.fingerprint
+            echo "\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+          # No later action or smoke test needs the private archive key.
+          gpgconf --homedir "$GNUPGHOME" --kill all >/dev/null 2>&1 || true
+          rm -rf "$GNUPGHOME"
+
+      - name: Smoke-test the production repository
+        run: |
+          docker run --rm \
+            -v "$PWD/site/apt:/repo:ro" \
+            ubuntu:24.04 bash -euxc '
+              install -d -m 0755 /etc/apt/keyrings
+              install -m 0644 \
+                /repo/oh-my-safety-archive-keyring.gpg \
+                /etc/apt/keyrings/oh-my-safety-archive-keyring.gpg
+              cat >/etc/apt/sources.list.d/oh-my-safety.sources <<EOF
+          Types: deb
+          URIs: file:/repo
+          Suites: stable
+          Components: main
+          Architectures: amd64
+          Signed-By: /etc/apt/keyrings/oh-my-safety-archive-keyring.gpg
+          EOF
+              apt-get update
+              apt-get install -y oh-my-safety
+              oh-my-safety version
+            '
+
+      - name: Upload auditable repository artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: apt-repository-${{ steps.release.outputs.tag }}
+          path: site/apt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: site
+
+  deploy:
+    name: Deploy signed repository
+    needs: build-production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

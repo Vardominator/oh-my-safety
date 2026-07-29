@@ -48,14 +48,15 @@ get_public_ip() {
     while IFS= read -r svc; do
         [[ -z "$svc" ]] && continue
         any=1
+        case "$svc" in http://*|https://*) : ;; *) svc="https://$svc" ;; esac
         ip="$(curl -s --max-time 10 "$svc" 2>/dev/null)"
         [[ -n "$ip" ]] && { printf '%s' "$ip"; return 0; }
     done < <(config_get_list 'checks.privacy.ip_address.services')
 
     [[ $any -eq 1 ]] && return 1
-    curl -s --max-time 10 ifconfig.me 2>/dev/null || \
-    curl -s --max-time 10 api.ipify.org 2>/dev/null || \
-    curl -s --max-time 10 icanhazip.com 2>/dev/null
+    curl -s --max-time 10 https://ifconfig.me 2>/dev/null || \
+    curl -s --max-time 10 https://api.ipify.org 2>/dev/null || \
+    curl -s --max-time 10 https://icanhazip.com 2>/dev/null
 }
 
 get_dns_resolver_ip() {

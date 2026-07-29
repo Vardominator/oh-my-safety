@@ -1,12 +1,17 @@
 # ipv6-leak
 
-Checks whether your Mac has a globally reachable IPv6 address that would expose your real location even when your VPN only protects IPv4 traffic.
+Checks whether your macOS or Linux endpoint has a globally reachable IPv6
+address that may bypass an IPv4-only VPN.
 
 **Category:** privacy · **Default severity:** warn · **Platforms:** all · **Runs every:** 300s (full scan)
 
 ## What it protects you from
 
-Most consumer VPNs tunnel your IPv4 traffic but do nothing about IPv6. If your internet connection also has IPv6 (many home and mobile networks do), your Mac can keep reaching the internet directly over IPv6 while everything else goes through the VPN. That is an **IPv6 leak**: a website, tracker, or anyone watching can read your real IPv6 address — which ties back to your ISP and rough physical location — even though the VPN made you look anonymous over IPv4.
+Most consumer VPNs tunnel your IPv4 traffic but do nothing about IPv6. If your
+internet connection also has IPv6, a macOS or Linux endpoint can keep reaching
+the internet directly over IPv6 while other traffic goes through the VPN. That
+is an **IPv6 leak**: a website, tracker, or anyone watching can read the visible
+IPv6 address even though the VPN changed the IPv4 address.
 
 The whole point of a VPN is to hide the address that identifies you. An IPv6 leak quietly punches a hole in that, and you would never notice from the VPN app itself: the "what is my IP" page shows the VPN's IPv4 while every page you load can still log your genuine IPv6 on the side. This check is a quick sanity test that your real IPv6 address is not escaping.
 
@@ -14,7 +19,11 @@ The whole point of a VPN is to hide the address that identifies you. An IPv6 lea
 
 The check asks the internet what address it sees you coming from, over IPv6 if possible:
 
-1. **Your visible IPv6 address.** It calls `get_ipv6_address`, which on macOS runs `curl -s --max-time 5 https://api64.ipify.org`. That endpoint answers over whichever protocol your machine actually connects with: if your Mac has working, routable IPv6, curl connects over IPv6 and the service echoes back an IPv6 address (something with colons, like `2601:...`); if IPv6 is blocked or unavailable, the connection falls back to IPv4 or returns nothing.
+1. **Your visible IPv6 address.** It calls `get_ipv6_address`, which queries
+   `https://api64.ipify.org` with a five-second timeout. Linux falls back to
+   `https://v6.ident.me` if the first request fails. If the endpoint has
+   working, routable IPv6, the service may echo an IPv6 address; otherwise the
+   request can fall back to IPv4 or return nothing.
 2. **Your VPN's IPv4 exit address.** It reuses `OMS_PUBLIC_IP` if an earlier check in the same scan already looked it up; otherwise it calls `get_public_ip`, which fetches over HTTPS from the services in `checks.privacy.ip_address.services` (by default `ifconfig.me`, then `api.ipify.org`, then `icanhazip.com`).
 
 It then compares the two and decides:
@@ -24,7 +33,11 @@ It then compares the two and decides:
 - The address contains a colon (`:`) → it is a real, reachable IPv6 address that is not your VPN exit — flagged as a leak (warn).
 - Anything else (a non-empty, colon-free value that differs from your exit) → treated as tunneled (pass).
 
-This is a **privacy** check, so it does make network calls: one HTTPS request to `api64.ipify.org` and (unless the public IP was already cached this scan) one HTTPS request to an IP-echo service. It inspects no local files, system databases, or network interfaces. It self-skips under `scan --offline` and reports `skipped (offline mode)`.
+This is a **privacy** check, so it makes an HTTPS request to
+`api64.ipify.org` (and, on Linux after failure, `v6.ident.me`) plus a request
+to a configured IP-echo service unless the public IP was already cached. It
+inspects no local files, system databases, or network interfaces. It
+self-skips under `scan --offline` and reports `skipped (offline mode)`.
 
 ## What it flags (and how serious)
 
@@ -45,12 +58,13 @@ None needed. It requires no Full Disk Access and no TCC (privacy) grant — only
 
 ## Configuration
 
-Read from `~/.config/oh-my-privacy/config.yaml`:
+Read from `~/.config/oh-my-safety/config.yaml`:
 
 - `checks.privacy.ipv6_leak.enabled` — default `true`.
 - `checks.privacy.ip_address.services` — the shared list of IP-echo endpoints used to learn the VPN's IPv4 exit when it isn't already cached for the scan. Defaults: `ifconfig.me`, `api.ipify.org`, `icanhazip.com`.
 
-The IPv6 lookup endpoint (`api64.ipify.org`) is hard-coded in the platform layer and is not configurable.
+The IPv6 lookup endpoints (`api64.ipify.org`, with `v6.ident.me` as the Linux
+fallback) are fixed in the platform layer and are not configurable.
 
 Enable or disable it:
 
@@ -64,7 +78,10 @@ Enable or disable it:
 - **After changing your setup** (enabling your VPN's IPv6 protection, or disabling IPv6 on your network), confirm with `oh-my-safety recheck ipv6-leak`.
 - **Per-item `ignore` and `accept` do not apply.** This check emits one whole-check finding keyed on its name — it has no per-item finding-ids, so `oh-my-safety ignore ipv6-leak <finding-id>` has nothing to target, and it keeps no baseline, so `oh-my-safety accept ipv6-leak` does nothing.
 
-To actually fix a real leak, the change lives in your VPN or network settings: turn on your VPN's "IPv6 leak protection" / kill switch, choose a VPN that tunnels IPv6, or disable IPv6 on the interface you use (e.g. `networksetup -setv6off Wi-Fi`). Then recheck.
+To actually fix a real leak, change the VPN or network settings: turn on the
+VPN's IPv6 leak protection or kill switch, choose a VPN that tunnels IPv6, or
+disable IPv6 on the active interface using the platform's supported network
+configuration. Then recheck.
 
 ## Limitations
 

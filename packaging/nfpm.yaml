@@ -1,0 +1,73 @@
+name: oh-my-safety
+arch: "${PACKAGE_ARCH}"
+platform: linux
+version: "${PACKAGE_VERSION}"
+section: utils
+priority: optional
+maintainer: oh-my-safety contributors
+description: |
+  Local-first safety and privacy monitor for macOS and Linux.
+  The endpoint performs its core scanning, correlation, and evidence storage
+  locally.
+vendor: oh-my-safety
+homepage: https://github.com/Vardominator/oh-my-safety
+license: MIT
+
+contents:
+  - src: ./bin
+    dst: /usr/lib/oh-my-safety/bin
+    type: tree
+    file_info:
+      mode: 0755
+  - src: ./lib
+    dst: /usr/lib/oh-my-safety/lib
+    type: tree
+  - src: ./config
+    dst: /usr/lib/oh-my-safety/config
+    type: tree
+  - src: ./plugins
+    dst: /usr/lib/oh-my-safety/plugins
+    type: tree
+  - src: ./docs
+    dst: /usr/share/doc/oh-my-safety
+    type: tree
+  - src: ./packaging/systemd/user/oh-my-safety.service
+    dst: /usr/lib/systemd/user/oh-my-safety.service
+    file_info:
+      mode: 0644
+  - src: "${PACKAGE_AGENT_PATH}"
+    dst: /usr/lib/oh-my-safety/bin/oh-my-safety-agent
+    expand: true
+    file_info:
+      mode: 0755
+  - src: "${PACKAGE_INTEL_PATH}"
+    dst: /usr/lib/oh-my-safety/bin/oh-my-safety-intel
+    expand: true
+    file_info:
+      mode: 0755
+  - src: /usr/lib/oh-my-safety/bin/oh-my-safety
+    dst: /usr/bin/oh-my-safety
+    type: symlink
+  - src: /usr/lib/oh-my-safety/bin/oh-my-privacy
+    dst: /usr/bin/oh-my-privacy
+    type: symlink
+  - src: /usr/lib/oh-my-safety/bin/oh-my-safety-agent
+    dst: /usr/bin/oh-my-safety-agent
+    type: symlink
+  - src: /usr/lib/oh-my-safety/bin/oh-my-safety-intel
+    dst: /usr/bin/oh-my-safety-intel
+    type: symlink
+
+overrides:
+  deb:
+    depends:
+      - bash
+      - curl
+      - iproute2
+      - procps
+  rpm:
+    depends:
+      - bash
+      - curl
+      - iproute
+      - procps-ng

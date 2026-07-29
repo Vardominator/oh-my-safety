@@ -11,7 +11,13 @@ brew install --cask swiftbar        # if you don't have SwiftBar
 oh-my-safety menubar install        # copies the plugin into SwiftBar's plugin folder
 ```
 
-Then open SwiftBar. Remove it with `oh-my-safety menubar uninstall`.
+Then open SwiftBar. The installer honors SwiftBar's configured `PluginDirectory`
+and falls back to `~/Library/Application Support/SwiftBar/Plugins`. Re-run the
+install command after upgrading if you want to refresh a previously copied
+plugin. The installer pins the plugin to the exact `oh-my-safety` executable
+that installed it, so a test build in `~/.local` cannot accidentally render
+status through an older Homebrew build. Remove the plugin and its executable
+hint with `oh-my-safety menubar uninstall`.
 
 ## What it shows
 
@@ -39,12 +45,14 @@ The dropdown is organized for action:
 The footer offers "Run deep scan now", "Full status", and "Refresh". Exact
 details and remediation hints come from the last scan's local state; opening the
 menu never runs a check. Because the background agent owns scanning and
-notifications, the plugin never double-notifies.
+notifications, the plugin never double-notifies. Text uses explicit,
+high-contrast light/dark palettes and larger detail sizes so it remains legible
+over SwiftBar's translucent menu in either macOS appearance.
 
 ## Is SwiftBar the right choice?
 
 For now, yes — it's actively maintained, brew-installable, and the plugin is a
-tiny wrapper over the `status --json` contract. A native Swift menu-bar app is on
+tiny wrapper over the `status --format swiftbar` contract. A native Swift menu-bar app is on
 the [roadmap](roadmap.md) for later; it would consume the exact same contract, so
 nothing here is wasted. (xbar also works — the plugin keeps xbar-compatible
 metadata — but it's effectively dormant, so we document SwiftBar.)

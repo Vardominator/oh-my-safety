@@ -21,10 +21,14 @@ YAML
     [[ "$output" == *"a.list=y"* ]]
 }
 
-@test "config_get precedence: override > user > default > fallback" {
+@test "config_get precedence: managed > override > user > default > fallback" {
+    OMS_CONFIG_FLAT_MANAGED=$'x.y=managed'
     OMS_CONFIG_FLAT_OVERRIDE=$'x.y=override'
     OMS_CONFIG_FLAT_USER=$'x.y=user'
     OMS_CONFIG_FLAT_DEFAULT=$'x.y=default'
+    run config_get x.y;   [ "$output" = "managed" ]
+
+    OMS_CONFIG_FLAT_MANAGED=""
     run config_get x.y;   [ "$output" = "override" ]
 
     OMS_CONFIG_FLAT_OVERRIDE=""
@@ -66,7 +70,54 @@ YAML
     run grep -q '^foo.bar=baz' "$OMS_OVERRIDES_FILE"; [ "$status" -eq 0 ]
 }
 
+@test "config_set_many atomically replaces selected keys and preserves others" {
+    load_config
+    config_set keep.this yes
+    config_set replace.this old
+    config_set_many <<'EOF'
+replace.this=new
+add.this=value
+EOF
+    [ "$(config_get keep.this)" = "yes" ]
+    [ "$(config_get replace.this)" = "new" ]
+    [ "$(config_get add.this)" = "value" ]
+    [ "$(grep -c '^replace.this=' "$OMS_OVERRIDES_FILE")" -eq 1 ]
+}
+
+@test "config setters reject unsafe paths and multiline values" {
+    load_config
+    run config_set 'bad[path]' value
+    [ "$status" -ne 0 ]
+    run config_set good.path $'line1\nline2'
+    [ "$status" -ne 0 ]
+}
+
 @test "config_expand_path expands a leading tilde" {
     run config_expand_path '~/x'; [ "$output" = "$HOME/x" ]
     run config_expand_path '/abs'; [ "$output" = "/abs" ]
+}
+
+@test "monitor config reload applies a valid snapshot and rejects invalid cadence" {
+    source "$OMS_ROOT/lib/cmd/monitor.sh"
+    cfg="$BATS_TEST_TMPDIR/monitor.yaml"
+    cat > "$cfg" <<'YAML'
+monitoring:
+  interval: 120
+  fast_interval: 5
+YAML
+    OMS_CONFIG_FILE_ARG="$cfg"
+    load_config "$cfg"
+    _monitor_reload_config
+    [ "$OMS_MONITOR_INTERVAL" = "120" ]
+    [ "$OMS_MONITOR_FAST_INTERVAL" = "5" ]
+
+    cat > "$cfg" <<'YAML'
+monitoring:
+  interval: never
+  fast_interval: 1
+YAML
+    run _monitor_reload_config
+    [ "$status" -ne 0 ]
+    [ "$(config_get monitoring.interval)" = "120" ]
+    [ "$(config_get monitoring.fast_interval)" = "5" ]
 }

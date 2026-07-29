@@ -1,0 +1,135 @@
+name: oh-my-safety
+title: oh-my-safety
+summary: Local-first endpoint safety and privacy monitoring for Linux
+description: |
+  oh-my-safety continuously checks endpoint privacy and security posture,
+  records findings locally, and can deliver explicitly configured
+  notifications.
+
+  This snap uses classic confinement because its purpose is to inspect the
+  current user's files (including hidden credential and persistence paths),
+  host processes, network state, and operating-system configuration. Strict
+  confinement would hide material parts of that security boundary and create
+  a false impression of coverage.
+license: MIT
+source-code: https://github.com/Vardominator/oh-my-safety
+issues: https://github.com/Vardominator/oh-my-safety/issues
+website: https://github.com/Vardominator/oh-my-safety
+
+adopt-info: oh-my-safety
+base: core24
+grade: stable
+confinement: classic
+assumes:
+  # User-scoped snap services became generally available in snapd 2.66.
+  - snapd2.66
+
+platforms:
+  amd64:
+    build-on: [amd64]
+    build-for: [amd64]
+  arm64:
+    build-on: [arm64]
+    build-for: [arm64]
+
+apps:
+  oh-my-safety:
+    command: bin/oh-my-safety-launcher
+
+  # Compatibility and advanced entry points remain namespaced under the snap:
+  # oh-my-safety.oh-my-privacy, oh-my-safety.agent, and oh-my-safety.intel.
+  oh-my-privacy:
+    command: bin/oh-my-safety-launcher --oms-snap-privacy
+  agent:
+    command: bin/oh-my-safety-launcher --oms-snap-agent
+  intel:
+    command: bin/oh-my-safety-launcher --oms-snap-intel
+
+  monitor:
+    command: bin/oh-my-safety-launcher monitor --quiet
+    daemon: simple
+    daemon-scope: user
+    # A safety monitor must not silently bless the machine's current state as
+    # trusted. The user reviews an initial offline scan before enabling it.
+    install-mode: disable
+    restart-condition: on-failure
+    restart-delay: 10s
+    stop-timeout: 30s
+    refresh-mode: restart
+
+parts:
+  oh-my-safety:
+    plugin: nil
+    source: .
+    build-packages:
+      - ca-certificates
+      - git
+      - golang-go
+    stage-packages:
+      - bash
+      - ca-certificates
+      - coreutils
+      - curl
+      - dnsutils
+      - findutils
+      - gawk
+      - grep
+      - iproute2
+      - libnotify-bin
+      - procps
+      - sed
+      - util-linux
+    override-pull: |
+      craftctl default
+      version="$(sed -n 's/^OMS_VERSION="\([^"]*\)".*/\1/p' "$CRAFT_PART_SRC/lib/core.sh" | head -1)"
+      if [ -z "$version" ]; then
+        echo "Unable to derive the snap version from lib/core.sh" >&2
+        exit 2
+      fi
+      craftctl set version="$version"
+    override-build: |
+      set -eu
+
+      install_root="$CRAFT_PART_INSTALL/usr/lib/oh-my-safety"
+      install -d "$install_root" "$CRAFT_PART_INSTALL/bin"
+      cp -a \
+        "$CRAFT_PART_SRC/bin" \
+        "$CRAFT_PART_SRC/config" \
+        "$CRAFT_PART_SRC/docs" \
+        "$CRAFT_PART_SRC/lib" \
+        "$CRAFT_PART_SRC/plugins" \
+        "$install_root/"
+      install -m 0755 \
+        "$CRAFT_PART_SRC/packaging/snap/oh-my-safety-launcher" \
+        "$CRAFT_PART_INSTALL/bin/oh-my-safety-launcher"
+
+      case "$CRAFT_ARCH_BUILD_FOR" in
+        amd64) goarch=amd64 ;;
+        arm64) goarch=arm64 ;;
+        *)
+          echo "Unsupported target architecture: $CRAFT_ARCH_BUILD_FOR" >&2
+          exit 2
+          ;;
+      esac
+
+      version="$(sed -n 's/^OMS_VERSION="\([^"]*\)".*/\1/p' "$CRAFT_PART_SRC/lib/core.sh" | head -1)"
+      cd "$CRAFT_PART_SRC"
+      CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" GOTOOLCHAIN=auto \
+        go build -trimpath -ldflags "-X main.agentVersion=$version" \
+        -o "$install_root/bin/oh-my-safety-agent" ./cmd/oh-my-safety-agent
+      CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" GOTOOLCHAIN=auto \
+        go build -trimpath \
+        -o "$install_root/bin/oh-my-safety-intel" ./cmd/oh-my-safety-intel
+
+    prime:
+      - bin/oh-my-safety-launcher
+      - usr/lib/oh-my-safety
+      - usr/bin
+      - usr/lib
+      - usr/sbin
+      - usr/share
+      - etc
+      - bin
+      - lib
+      - lib64
+      - sbin

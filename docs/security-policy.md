@@ -12,15 +12,16 @@ repository profile. Include:
 
 - what the issue is and its impact,
 - steps or a proof of concept to reproduce it,
-- the version (`oh-my-safety version`) and macOS version.
+- the version (`oh-my-safety version`) and operating-system version.
 
 We aim to acknowledge reports promptly and to credit reporters (unless you
 prefer to remain anonymous) once a fix ships.
 
 ## What's in scope
 
-- Any way oh-my-safety could be made to **exfiltrate data** or make a network
-  call from a security check (this must never happen — see below).
+- Any way oh-my-safety could **exfiltrate data**, bypass an adapter's explicit
+  network/offline gate, or transmit fields outside its documented disclosure
+  contract.
 - **Privilege issues**: unintended use of `sudo`, or writing outside the user's
   own config/state directories.
 - **False assurance**: a check reporting "pass" while the condition it claims to
@@ -30,15 +31,24 @@ prefer to remain anonymous) once a fix ships.
 
 ## Security properties we commit to
 
-- **No network calls from security checks.** Enforced in CI by a `grep` gate over
-  `lib/checks/security/`. The only network traffic comes from the clearly-labeled
-  privacy checks (see [privacy.md](privacy.md)).
-- **No telemetry, ever.** Nothing is uploaded from anywhere in the tool.
-- **Least privilege.** The tool never requires `sudo`; state lives under the
-  user's own `~/.local/state/oh-my-safety` (mode 700). Full Disk Access is
-  optional and only used to read data the user explicitly wants audited.
+- **No direct network clients in security checks.** Enforced in CI by a `grep`
+  gate over `lib/checks/security/`. The opt-in `breach-exposure` check can only
+  delegate to the centralized bounded exposure adapter, declares that it
+  requires network access, and is blocked by offline profiles.
+- **No product telemetry.** Core scanning and evidence remain local. Network
+  traffic exists only through documented privacy probes, explicitly enabled
+  exposure/notification adapters, or explicit enrollment with a self-hosted
+  organization controller. Each path has a closed disclosure contract; see
+  [privacy.md](privacy.md).
+- **Least privilege.** The endpoint runtime never requires `sudo`; state lives under the
+  user's XDG state directory (mode `700`). Full Disk Access is optional on
+  macOS and only used to read data the user explicitly wants audited. The
+  separately operated organization controller should run as its own
+  unprivileged service account.
 - **No auto-downloaded code or rules.** Opt-in scanners (gitleaks/trufflehog/YARA)
   are only invoked if you install and enable them; YARA rules are never fetched.
+  Offline intelligence is declarative, signed, bounded, and imported from an
+  explicit local file.
 
 ## Known limitations (not vulnerabilities)
 

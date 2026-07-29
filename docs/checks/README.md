@@ -18,12 +18,16 @@ Everything is enabled by default. Turn any check or whole category on/off with `
 
 | Check | Severity | Platforms | Interval | What it checks |
 |-------|----------|-----------|----------|----------------|
+| [breach-exposure](security/breach-exposure.md) | warn | all | 86400 | Opt-in monitored-account breach exposure |
 | [hardening-posture](security/hardening-posture.md) | warn | macos | 3600 | Audits SIP, Gatekeeper, FileVault, firewall, remote access, auto-updates, and XProtect freshness |
+| [linux-hardening-posture](security/linux-hardening-posture.md) | warn | linux | 3600 | Audits Linux disk encryption, Secure Boot, firewall, MAC, SSH, and automatic security updates |
+| [linux-persistence-scan](security/linux-persistence-scan.md) | critical | linux | 600 | Flags new Linux systemd, cron, autostart, shell-startup, and preload persistence |
+| [local-secret-scan](security/local-secret-scan.md) | warn | macos linux | 86400 | Bounded built-in credential content scan |
 | [network-exposure](security/network-exposure.md) | warn | macos | 60 | New listening TCP network services detected via baseline drift |
 | [persistence-scan](security/persistence-scan.md) | critical | macos | 600 | Flags newly added persistence mechanisms against a saved baseline |
 | [process-audit](security/process-audit.md) | warn | macos | 60 | Flag suspicious running processes (unsigned/adhoc/translocated/deleted binaries, osascript phishing) |
-| [secrets-content](security/secrets-content.md) | warn | macos | 86400 | Deep secret scan (gitleaks/trufflehog) |
-| [secrets-exposure](security/secrets-exposure.md) | warn | macos | 3600 | Flags world-readable keys/credential files and credential-looking notes in unprotected locations |
+| [secrets-content](security/secrets-content.md) | warn | macos linux | 86400 | Deep secret scan (gitleaks/trufflehog) |
+| [secrets-exposure](security/secrets-exposure.md) | warn | macos linux | 3600 | Flags world-readable keys/credential files and credential-looking notes in unprotected locations |
 | [tcc-audit](security/tcc-audit.md) | warn | macos | 600 | Audit which apps hold sensitive privacy grants and flag new ones |
 | [wallet-guard](security/wallet-guard.md) | critical | macos | 600 | Inventory crypto wallets and flag insecure permissions or cloud-synced seed data |
-| [yara-scan](security/yara-scan.md) | critical | macos | 86400 | YARA malware-rule scan of download/temp dirs |
+| [yara-scan](security/yara-scan.md) | critical | macos linux | 86400 | YARA malware-rule scan of download/temp dirs |

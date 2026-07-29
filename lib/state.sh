@@ -154,6 +154,16 @@ _notify_last_epoch() {
     printf '%s' "$line" | awk -F'\t' '{print $3}'
 }
 
+# Echo the last-notified severity for a finding, or empty.
+_notify_last_severity() {
+    local check="$1" id="$2" f line
+    f="$(_notified_file "$check")"
+    [[ -f "$f" ]] || return 0
+    line="$(grep -F "$(printf '%s\t' "$id")" "$f" 2>/dev/null | head -1 || true)"
+    [[ -z "$line" ]] && return 0
+    printf '%s' "$line" | awk -F'\t' '{print $2}'
+}
+
 # Record (or refresh) a notification for a finding at the current time.
 _notify_record() {
     local check="$1" id="$2" sev="$3" now="$4"
@@ -168,4 +178,134 @@ _notify_record() {
     printf '%s\t%s\t%s\n' "$id" "$sev" "$now" >> "$tmp"
     chmod 600 "$tmp" 2>/dev/null || true
     mv -f "$tmp" "$f"
+}
+
+# Remove notification state for findings that are no longer active. Active IDs
+# are read from stdin, one per line. Resolved IDs are printed so the caller can
+# surface a single, useful recovery notification.
+_notify_resolve_missing() {
+    local check="$1" f tmp active resolved id sev epoch found candidate
+    f="$(_notified_file "$check")"
+    [[ -f "$f" ]] || { cat >/dev/null; return 0; }
+
+    active="$(cat)"
+    tmp="${f}.tmp.$$"
+    resolved=""
+    : > "$tmp"
+
+    while IFS=$'\t' read -r id sev epoch; do
+        [[ -z "$id" ]] && continue
+        found=false
+        while IFS= read -r candidate; do
+            [[ "$candidate" == "$id" ]] && { found=true; break; }
+        done <<EOF
+$active
+EOF
+        if [[ "$found" == "true" ]]; then
+            printf '%s\t%s\t%s\n' "$id" "$sev" "$epoch" >> "$tmp"
+        else
+            if [[ -z "$resolved" ]]; then resolved="$id"; else resolved="$resolved
+$id"; fi
+        fi
+    done < "$f"
+
+    if [[ -s "$tmp" ]]; then
+        chmod 600 "$tmp" 2>/dev/null || true
+        mv -f "$tmp" "$f"
+    else
+        rm -f "$tmp" "$f"
+    fi
+    [[ -n "$resolved" ]] && printf '%s\n' "$resolved"
+}
+
+# ---------------------------------------------------------------------------
+# Scan scheduling and global non-overlap
+# ---------------------------------------------------------------------------
+
+_schedule_file() {
+    local category="$1" check="$2"
+    state_path "schedule/${category}--${check}.epoch"
+}
+
+schedule_last_epoch() {
+    local f value
+    f="$(_schedule_file "$1" "$2")"
+    [[ -f "$f" ]] || return 0
+    IFS= read -r value < "$f" || true
+    case "$value" in ''|*[!0-9]*) return 0 ;; esac
+    printf '%s' "$value"
+}
+
+schedule_record_epoch() {
+    local category="$1" check="$2" epoch="$3"
+    case "$epoch" in ''|*[!0-9]*) return 1 ;; esac
+    printf '%s\n' "$epoch" | _state_write_atomic "$(_schedule_file "$category" "$check")"
+}
+
+_scan_lock_dir() { state_path "locks/scan.lock"; }
+
+_scan_lock_mtime() {
+    local path="$1" value
+    value="$(stat -f '%m' "$path" 2>/dev/null)" || value=""
+    if [[ -z "$value" ]]; then
+        value="$(stat -c '%Y' "$path" 2>/dev/null)" || value=""
+    fi
+    case "$value" in ''|*[!0-9]*) return 1 ;; esac
+    printf '%s' "$value"
+}
+
+# Acquire one process-wide scan lock. mkdir is atomic on both macOS and Linux.
+# A lock whose owner PID no longer exists is reclaimed once.
+scan_lock_acquire() {
+    local lock owner attempt=0 mtime now
+    lock="$(_scan_lock_dir)"
+    while [[ "$attempt" -lt 2 ]]; do
+        if mkdir "$lock" 2>/dev/null; then
+            printf '%s\n' "$$" | _state_write_atomic "$lock/pid" || {
+                rmdir "$lock" 2>/dev/null || true
+                return 1
+            }
+            OMS_SCAN_LOCK_DIR="$lock"
+            export OMS_SCAN_LOCK_DIR
+            return 0
+        fi
+
+        owner=""
+        [[ -f "$lock/pid" ]] && IFS= read -r owner < "$lock/pid" || true
+        case "$owner" in
+            ''|*[!0-9]*)
+                # Another process may be between mkdir and writing its owner.
+                # Treat a young ownerless lock as busy, but recover an orphan
+                # after a conservative grace period.
+                mtime="$(_scan_lock_mtime "$lock")" || return 1
+                now="$(date +%s)"
+                [[ $(( now - mtime )) -lt 30 ]] && return 1
+                rm -f "$lock/pid"
+                rmdir "$lock" 2>/dev/null || return 1
+                attempt=$(( attempt + 1 ))
+                continue ;;
+        esac
+        if kill -0 "$owner" 2>/dev/null; then
+            return 1
+        fi
+
+        # Reclaim only the two known lock artifacts and only after confirming
+        # that the recorded process is gone.
+        rm -f "$lock/pid"
+        rmdir "$lock" 2>/dev/null || return 1
+        attempt=$(( attempt + 1 ))
+    done
+    return 1
+}
+
+scan_lock_release() {
+    local lock owner=""
+    lock="${OMS_SCAN_LOCK_DIR:-$(_scan_lock_dir)}"
+    [[ -d "$lock" ]] || return 0
+    [[ -f "$lock/pid" ]] && IFS= read -r owner < "$lock/pid" || true
+    [[ "$owner" == "$$" ]] || return 1
+    rm -f "$lock/pid"
+    rmdir "$lock" 2>/dev/null || return 1
+    OMS_SCAN_LOCK_DIR=""
+    export OMS_SCAN_LOCK_DIR
 }

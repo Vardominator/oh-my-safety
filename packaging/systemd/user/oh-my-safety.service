@@ -1,0 +1,22 @@
+[Unit]
+Description=oh-my-safety local safety monitor
+Documentation=https://github.com/Vardominator/oh-my-safety
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/oh-my-safety monitor --quiet
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=-%h/.config/oh-my-safety
+ReadWritePaths=-%h/.local/state/oh-my-safety
+
+[Install]
+WantedBy=default.target

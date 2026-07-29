@@ -1,6 +1,17 @@
 #!/bin/bash
 # oh-my-safety - Linux platform module
 
+# Portable filesystem helpers used by cross-platform security checks.
+oms_file_mode()  { stat -c '%a' "$1" 2>/dev/null; }
+oms_file_mtime() { stat -c '%Y' "$1" 2>/dev/null; }
+oms_sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" 2>/dev/null | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" 2>/dev/null | awk '{print $1}'
+    fi
+}
+
 # Send a Linux notification (requires libnotify or similar)
 send_notification() {
     local title="$1"
@@ -43,10 +54,22 @@ send_alert() {
 
 # Get public IP address
 get_public_ip() {
-    curl -s --max-time 10 ifconfig.me 2>/dev/null || \
-    curl -s --max-time 10 api.ipify.org 2>/dev/null || \
-    curl -s --max-time 10 icanhazip.com 2>/dev/null || \
-    wget -qO- --timeout=10 ifconfig.me 2>/dev/null
+    local svc ip any=0
+    while IFS= read -r svc; do
+        [[ -z "$svc" ]] && continue
+        any=1
+        case "$svc" in http://*|https://*) : ;; *) svc="https://$svc" ;; esac
+        if command -v curl >/dev/null 2>&1; then
+            ip="$(curl -s --max-time 10 "$svc" 2>/dev/null)"
+        elif command -v wget >/dev/null 2>&1; then
+            ip="$(wget -qO- --timeout=10 "$svc" 2>/dev/null)"
+        else
+            return 1
+        fi
+        [[ -n "$ip" ]] && { printf '%s' "$ip"; return 0; }
+    done < <(config_get_list 'checks.privacy.ip_address.services')
+    [[ "$any" -eq 1 ]] && return 1
+    return 1
 }
 
 # Get DNS resolver IP via Google's service

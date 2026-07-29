@@ -6,7 +6,7 @@
 CHECK_NAME="secrets-content"
 CHECK_DESCRIPTION="Deep secret scan (gitleaks/trufflehog)"
 CHECK_CATEGORY="security"
-CHECK_PLATFORMS="macos"
+CHECK_PLATFORMS="macos linux"
 CHECK_SEVERITY="warn"
 CHECK_CONTRACT="2"
 CHECK_REQUIRES_NETWORK="false"

@@ -94,7 +94,10 @@ macOS: `oms_codesign_verdict` (cached), `oms_proc_path`, `oms_plist_program`,
 ## Rules
 
 - **bash 3.2 compatible** — no `declare -A`, `mapfile`/`readarray`, `${x^^}`/`${x,,}`, `|&`.
-- **Security checks make no network calls** — enforced by CI (`grep` gate).
+- **Security checks contain no direct network client calls** — enforced by CI
+  (`grep` gate). Any exceptional network-capable check must be disabled by
+  default, declare its network requirement, and delegate to a centralized
+  adapter with a documented disclosure contract.
 - **No sudo, degrade gracefully** — if you lack a permission, return `77` with a
   clear reason rather than failing.
 - **`CHECK_CONTRACT`** lets the runner skip a check written against a newer

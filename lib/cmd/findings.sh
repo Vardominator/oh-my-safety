@@ -42,6 +42,8 @@ cmd_recheck() {
         return 1
     fi
     load_platform
+    OMS_SCAN_SOURCE="recheck"
+    export OMS_SCAN_SOURCE
     run_scan --check "$check" --deep
 }
 

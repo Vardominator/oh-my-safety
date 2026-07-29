@@ -1,0 +1,191 @@
+name: Distribution
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: distribution-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  linux-packages:
+    name: Linux packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install pinned nFPM
+        run: GOTOOLCHAIN=local go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
+
+      - name: Build deb, rpm, and portable archive
+        run: |
+          OMS_PACKAGE_ARCH=amd64 ./scripts/build-linux-packages.sh
+          OMS_PACKAGE_ARCH=arm64 ./scripts/build-linux-packages.sh
+          ./scripts/build-controller-release.sh
+
+      - name: Inspect package metadata
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y rpm
+          deb_amd64=$(find dist -maxdepth 1 -name 'oh-my-safety_*_amd64.deb' -print -quit)
+          deb_arm64=$(find dist -maxdepth 1 -name 'oh-my-safety_*_arm64.deb' -print -quit)
+          rpm_amd64=$(find dist -maxdepth 1 -name 'oh-my-safety-*.amd64.rpm' -print -quit)
+          rpm_arm64=$(find dist -maxdepth 1 -name 'oh-my-safety-*.arm64.rpm' -print -quit)
+          archive_amd64=$(find dist -maxdepth 1 -name 'oh-my-safety_*_amd64.tar.gz' -print -quit)
+          archive_arm64=$(find dist -maxdepth 1 -name 'oh-my-safety_*_arm64.tar.gz' -print -quit)
+          controller_amd64=$(find dist -maxdepth 1 -name 'oh-my-safety-controller_*_linux_amd64.tar.gz' -print -quit)
+          controller_arm64=$(find dist -maxdepth 1 -name 'oh-my-safety-controller_*_linux_arm64.tar.gz' -print -quit)
+          test -n "$deb_amd64"
+          test -n "$deb_arm64"
+          test -n "$rpm_amd64"
+          test -n "$rpm_arm64"
+          test -n "$archive_amd64"
+          test -n "$archive_arm64"
+          test -n "$controller_amd64"
+          test -n "$controller_arm64"
+          dpkg-deb --info "$deb_amd64"
+          dpkg-deb --info "$deb_arm64"
+          rpm --query --package --info "$rpm_amd64"
+          rpm --query --package --info "$rpm_arm64"
+          for archive in "$archive_amd64" "$archive_arm64"; do
+            tar tzf "$archive" | grep '/bin/oh-my-safety-agent$'
+            tar tzf "$archive" | grep '/bin/oh-my-safety-intel$'
+          done
+          tar tzf "$controller_amd64" | grep '/oh-my-safety-controller$'
+          tar tzf "$controller_arm64" | grep '/oh-my-safety-controller$'
+
+      - name: Install and smoke-test Debian package
+        run: |
+          docker run --rm -v "$PWD/dist:/packages:ro" ubuntu:24.04 bash -euxc '
+            apt-get update -qq
+            apt-get install -y /packages/*_amd64.deb
+            oh-my-safety version
+            oh-my-safety checks >/dev/null
+            oh-my-safety-agent --state-db /tmp/journal.db >/tmp/readiness.json
+            grep -q "\"ready\":true" /tmp/readiness.json
+            oh-my-safety-intel help | grep -q "\"commands\""
+            test -f /usr/lib/systemd/user/oh-my-safety.service
+          '
+
+      - name: Install and smoke-test RPM package
+        run: |
+          docker run --rm -v "$PWD/dist:/packages:ro" rockylinux:9 bash -euxc '
+            dnf install -y /packages/*.amd64.rpm
+            oh-my-safety version
+            oh-my-safety checks >/dev/null
+            oh-my-safety-agent --state-db /tmp/journal.db >/tmp/readiness.json
+            grep -q "\"ready\":true" /tmp/readiness.json
+            oh-my-safety-intel help | grep -q "\"commands\""
+            test -f /usr/lib/systemd/user/oh-my-safety.service
+          '
+
+      - name: Upload release-ready Linux artifacts
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4
+        with:
+          name: linux-packages
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  homebrew-swiftbar:
+    name: Homebrew and SwiftBar
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Validate formula
+        run: |
+          ruby -c Formula/oh-my-safety.rb
+          brew tap-new vardominator/oh-my-safety
+          tap_root="$(brew --repository vardominator/oh-my-safety)"
+          cp Formula/oh-my-safety.rb "$tap_root/Formula/oh-my-safety.rb"
+          brew style vardominator/oh-my-safety/oh-my-safety
+          brew audit --strict vardominator/oh-my-safety/oh-my-safety
+
+      - name: Install and test stable Homebrew release
+        run: |
+          brew install vardominator/oh-my-safety/oh-my-safety
+          brew test vardominator/oh-my-safety/oh-my-safety
+          oh-my-safety version
+          oh-my-safety checks >/dev/null
+
+      - name: Verify Homebrew service lifecycle
+        run: |
+          trap 'brew services stop oh-my-safety >/dev/null 2>&1 || true' EXIT
+          brew services start oh-my-safety
+          brew services list | grep -E '^oh-my-safety[[:space:]]+started'
+          brew services stop oh-my-safety
+          trap - EXIT
+
+      - name: Verify SwiftBar install, render, migration, and uninstall
+        run: |
+          plugin_dir="$RUNNER_TEMP/swiftbar-plugins"
+          mkdir -p "$plugin_dir"
+          defaults write com.ameba.SwiftBar PluginDirectory -string "$plugin_dir"
+          trap 'defaults delete com.ameba.SwiftBar PluginDirectory >/dev/null 2>&1 || true' EXIT
+
+          touch "$plugin_dir/oh-my-privacy.30s.sh"
+          oh-my-safety menubar install
+          test -x "$plugin_dir/oh-my-safety.30s.sh"
+          test -f "$plugin_dir/oh-my-privacy.30s.sh.disabled"
+
+          set +e
+          swiftbar_output="$("$plugin_dir/oh-my-safety.30s.sh")"
+          swiftbar_status=$?
+          set -e
+          test "$swiftbar_status" -eq 0 -o "$swiftbar_status" -eq 3
+          printf '%s\n' "$swiftbar_output" | grep -Eq '🌀|🛡️|⚠️|🚨'
+
+          oh-my-safety menubar uninstall
+          test ! -e "$plugin_dir/oh-my-safety.30s.sh"
+          defaults delete com.ameba.SwiftBar PluginDirectory
+          trap - EXIT
+
+      - name: Verify HEAD installation remains available
+        run: |
+          brew uninstall oh-my-safety
+
+          # The formula's real HEAD must remain remote main, but a pull request
+          # needs to test the exact checked-out commit rather than yesterday's
+          # main branch. Publish this checkout to a temporary local bare repo
+          # and alter only the temporary tap copy of the formula.
+          tap_root="$(brew --repository vardominator/oh-my-safety)"
+          head_repo="$RUNNER_TEMP/oh-my-safety-head.git"
+          git init --bare "$head_repo"
+          git push "$head_repo" HEAD:refs/heads/ci-head
+          python3 - "$tap_root/Formula/oh-my-safety.rb" "$head_repo" <<'PY'
+          import pathlib
+          import sys
+
+          formula = pathlib.Path(sys.argv[1])
+          head_uri = pathlib.Path(sys.argv[2]).resolve().as_uri()
+          source = formula.read_text(encoding="utf-8")
+          old = 'url "https://github.com/Vardominator/oh-my-safety.git", branch: "main"'
+          new = f'url "{head_uri}", branch: "ci-head"'
+          if source.count(old) != 1:
+              raise SystemExit("unable to locate the formula HEAD source")
+          formula.write_text(source.replace(old, new), encoding="utf-8")
+          PY
+          ruby -c "$tap_root/Formula/oh-my-safety.rb"
+          brew install --HEAD vardominator/oh-my-safety/oh-my-safety
+          oh-my-safety version
+          oh-my-safety checks >/dev/null
+          oh-my-safety-agent --state-db "$RUNNER_TEMP/head-journal.db" |
+            python3 -m json.tool >/dev/null
+          oh-my-safety-intel help | python3 -m json.tool >/dev/null

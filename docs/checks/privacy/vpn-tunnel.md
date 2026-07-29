@@ -1,18 +1,23 @@
 # vpn-tunnel
 
-Checks whether a VPN tunnel network interface is currently up on your Mac, so you can tell at a glance whether your VPN is actually connected.
+Checks whether a recognized VPN tunnel network interface is currently up on
+macOS or Linux.
 
 **Category:** privacy · **Default severity:** warn · **Platforms:** all · **Runs every:** 300s (full scan)
 
 ## What it protects you from
 
-A VPN only protects you while it is connected. VPN apps drop silently more often than people realize — after your Mac wakes from sleep, when Wi-Fi switches networks, when a session token expires, or when the app just crashes. When that happens the menu-bar icon does not always tell the truth, and your traffic quietly falls back to your regular, un-tunneled connection. From that moment on, every site you visit sees your real ISP address and your real location, exactly as if the VPN were never there.
+A VPN only protects you while it is connected. VPN apps can drop silently
+after suspend/resume, a network change, token expiry, or a crash. When that
+happens traffic may fall back to the ordinary connection even while a desktop
+indicator looks healthy.
 
 This check is the simple, direct answer to "is my VPN actually up right now?" It looks for the network interface a VPN creates while connected. If that interface exists, a tunnel is up; if it has vanished, your VPN is disconnected and you are browsing in the clear. Think of it as a dashboard light for your VPN, not a deep security scan.
 
 ## How it works
 
-This is a **local** check — it inspects your Mac's own network interfaces and makes **no network calls**. It is marked `CHECK_REQUIRES_NETWORK=false`.
+This is a **local** check: it inspects the endpoint's own network interfaces
+and makes **no network calls**. It is marked `CHECK_REQUIRES_NETWORK=false`.
 
 1. It calls `get_vpn_interfaces`, which on macOS runs:
    ```
@@ -27,6 +32,9 @@ This is a **local** check — it inspects your Mac's own network interfaces and 
    and prints a pass line naming the interface and its IP.
 
 3. If at least one tunnel interface was found, the check passes. If none were found, it warns.
+
+On Linux, the equivalent helpers read `ip link show` and `ip addr show`.
+Recognized prefixes are `tun`, `tap`, `wg`, and `ppp`.
 
 Because it never touches the network, this check runs identically whether or not you are online, and it does **not** self-skip under `scan --offline` (unlike the network-based privacy checks such as `dns-leak` and `ipv6-leak`, which do skip when offline).
 
@@ -46,15 +54,19 @@ Nothing. This check is completely stateless. It keeps no baseline, records nothi
 
 ## Permissions
 
-None. Reading `ifconfig` output works as an ordinary user, so the check needs no Full Disk Access and no TCC (privacy) permission.
+None. Reading `ifconfig` on macOS or `ip` output on Linux works as an ordinary
+user, so the check needs no elevated or macOS privacy permission.
 
 ## Configuration
 
 Config keys under `checks.privacy.vpn_tunnel` in `~/.config/oh-my-safety/config.yaml`:
 
 - `checks.privacy.vpn_tunnel.enabled` — default `true`. Turns the check on or off.
-- `checks.privacy.vpn_tunnel.interfaces` — default list `utun*`, `tun*`, `ppp*`, `ipsec*`, `wg*`.
-  **Heads-up:** despite living under this check's key, this list is **not** read by the `vpn-tunnel` check. Its detection uses the fixed `^(utun|tun|ppp|ipsec|wg)` pattern baked into `get_vpn_interfaces`. The configurable list is consumed only by the shared `is_vpn_interface` helper, which powers the `routing` check. Editing `interfaces` changes that check, not the tunnel-presence test here.
+- `checks.privacy.vpn_tunnel.interfaces` — default list `utun*`, `tun*`,
+  `ppp*`, `ipsec*`, `wg*`. **Heads-up:** the `vpn-tunnel` collector itself
+  uses fixed platform patterns. This configurable list is consumed by the
+  macOS `routing` check; it does not change tunnel-presence detection and does
+  not currently alter Linux routing detection.
 
 Enable or disable the check with:
 
@@ -74,7 +86,15 @@ Enable or disable the check with:
 ## Limitations
 
 - **Presence, not protection.** It only confirms a tunnel interface *exists* — not that your traffic is actually routed through it. A tunnel can be up while your default route still bypasses it (split tunnel, or a half-torn-down connection). Proving traffic is routed through the VPN is the job of the separate `routing` check.
-- **False positives.** macOS and other software create tunnel interfaces for reasons unrelated to a privacy VPN — Handoff/Continuity, a corporate VPN, a self-hosted WireGuard link, virtualization or container networks, or a leftover interface. Any of these registers as "VPN tunnel active."
-- **False negatives / name-based detection.** A VPN that uses an interface name outside the fixed `utun/tun/ppp/ipsec/wg` prefixes is not recognized, producing a false "disconnected" warning while it is actually running. Because this check ignores the configurable `interfaces` list, you cannot teach it new prefixes from config.
+- **False positives.** Operating systems and other software create tunnel
+  interfaces for reasons unrelated to a privacy VPN: continuity features,
+  corporate VPNs, self-hosted WireGuard links, virtualization/container
+  networks, or stale interfaces. Any recognized interface registers as active.
+- **False negatives / name-based detection.** A VPN outside the fixed macOS
+  `utun|tun|ppp|ipsec|wg` or Linux `tun|tap|wg|ppp` prefixes is not recognized.
+  Because this check ignores the configurable list, you cannot teach it a new
+  prefix from config.
 - **Point-in-time only.** It samples once per full scan (every 300s by default), so a brief disconnect-and-reconnect between scans can be missed.
-- **Userspace only.** Like all oh-my-safety checks, it runs as your user and trusts what the OS reports. Root-level malware that tampers with `ifconfig` output could hide a disconnected VPN from this check.
+- **Userspace only.** Like all oh-my-safety checks, it runs as your user and
+  trusts the platform's `ifconfig` or `ip` output. Privileged malware that
+  tampers with those observations could hide a disconnected VPN.

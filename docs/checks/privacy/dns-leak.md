@@ -6,7 +6,11 @@ Checks whether your DNS lookups are being answered from outside your VPN tunnel,
 
 ## What it protects you from
 
-Every time you open a website, your Mac first asks a DNS resolver to translate the name (like `example.com`) into an IP address. That question contains the name of every site you visit. When you connect to a VPN, you expect those DNS questions to travel *inside* the encrypted tunnel so nobody outside can see them.
+Every time you open a website, your computer first asks a DNS resolver to
+translate the name (like `example.com`) into an IP address. That question
+contains the name of every site you visit. When you connect to a VPN, you
+expect those DNS questions to travel *inside* the encrypted tunnel so nobody
+outside can see them.
 
 A **DNS leak** happens when your VPN carries your web traffic but your DNS questions slip out over your normal internet connection instead. The result: your browsing looks private, but your internet provider (or whoever runs the resolver you're leaking to — including café or airport Wi-Fi) still sees a running list of every domain you look up. That defeats a big part of why you turned the VPN on. This check gives you a quick, honest signal that your DNS is actually going where your VPN goes.
 
@@ -14,12 +18,18 @@ A **DNS leak** happens when your VPN carries your web traffic but your DNS quest
 
 Each full scan, the check compares two independently discovered public IP addresses and sees whether they agree:
 
-1. **Your DNS resolver's exit IP.** It runs `nslookup -type=txt o-o.myaddr.l.google.com ns1.google.com`. This asks one of Google's name servers a special question that makes it reply with the public IP of whichever resolver actually forwarded the request — in other words, where your DNS queries emerge onto the internet.
+1. **Your DNS resolver's exit IP.** It asks `ns1.google.com` for the TXT record
+   `o-o.myaddr.l.google.com`. macOS uses `nslookup`; Linux uses `nslookup` when
+   available and falls back to `dig`. This special answer identifies the
+   public IP from which the resolver request reached Google.
 2. **Your VPN's public IP.** It reuses the public IP already discovered this scan (`OMS_PUBLIC_IP`) if an earlier check looked it up; otherwise it fetches it fresh via `get_public_ip`, which tries each endpoint in `checks.privacy.ip_address.services` in order (by default `ifconfig.me`, then `api.ipify.org`, then `icanhazip.com`), each with a 10-second timeout.
 
 If those two IPs match, your DNS is exiting through the same place as the rest of your traffic — no leak. If they differ, your DNS is likely taking a different path.
 
-For context, every outcome also prints your locally configured DNS servers, read with `scutil --dns` (nameserver entries, de-duplicated, up to the first six). This is a local read, involves no network call, and is **not** part of the pass/fail decision.
+For context, every outcome also prints up to six locally configured DNS
+servers. macOS reads them with `scutil --dns`; Linux reads `/etc/resolv.conf`
+and, when available, `resolvectl status`. This local inventory is not part of
+the pass/fail decision.
 
 This check requires network access. Under `oh-my-safety scan --offline` it is skipped automatically and reported as `skipped (offline mode)`.
 
@@ -40,7 +50,9 @@ None. This check is stateless — it re-measures the two IPs on every run and co
 
 ## Permissions
 
-None needed. It uses ordinary command-line tools (`nslookup`, `curl`, `scutil`) that require no Full Disk Access or any other special grant.
+No elevated permission is needed. It uses ordinary command-line tools:
+`nslookup`, `curl`, and `scutil` on macOS; `nslookup` or `dig`, an HTTP client,
+and resolver configuration files/tools on Linux.
 
 ## Configuration
 
