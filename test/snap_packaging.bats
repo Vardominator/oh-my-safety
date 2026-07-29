@@ -21,9 +21,18 @@ setup() {
 
 @test "snap version is adopted from the application source of truth" {
     grep -Eq '^adopt-info:[[:space:]]+oh-my-safety$' "$SNAP_RECIPE"
-    ! grep -Eq '^version:' "$SNAP_RECIPE"
+    run grep -Eq '^version:' "$SNAP_RECIPE"
+    [ "$status" -ne 0 ]
     grep -Fq 'OMS_VERSION=' "$SNAP_RECIPE"
     grep -Fq 'craftctl set version=' "$SNAP_RECIPE"
+}
+
+@test "snap prime list follows the core24 merged-usr layout" {
+    grep -Eq '^[[:space:]]+- usr/lib$' "$SNAP_RECIPE"
+    grep -Eq '^[[:space:]]+- usr/sbin$' "$SNAP_RECIPE"
+
+    run grep -Eq '^[[:space:]]+- (lib|lib64|sbin)$' "$SNAP_RECIPE"
+    [ "$status" -ne 0 ]
 }
 
 @test "snap launcher pins helpers and durable private XDG paths" {
@@ -53,8 +62,8 @@ EOF
     [[ "$output" == *"path=$fake_snap/usr/lib/oh-my-safety/bin:$fake_snap/usr/sbin:$fake_snap/usr/bin"* ]]
     [[ "$output" == *"target=$fake_snap/usr/lib/oh-my-safety/bin/oh-my-safety"* ]]
     [[ "$output" == *"arg=version"* ]]
-    [ "$(stat -f '%Lp' "$common/config" 2>/dev/null || stat -c '%a' "$common/config")" = "700" ]
-    [ "$(stat -f '%Lp' "$common/state" 2>/dev/null || stat -c '%a' "$common/state")" = "700" ]
+    [ "$(_oms_test_file_mode "$common/config")" = "700" ]
+    [ "$(_oms_test_file_mode "$common/state")" = "700" ]
 }
 
 @test "snap launcher rejects use outside the snap runtime" {

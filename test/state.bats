@@ -73,6 +73,6 @@ setup() { load test_helper; _oms_setup; }
 
 @test "state dir is created mode 700" {
     state_dir >/dev/null
-    run stat -f '%Lp' "$OMS_STATE_DIR"
+    run _oms_test_file_mode "$OMS_STATE_DIR"
     [ "$output" = "700" ]
 }

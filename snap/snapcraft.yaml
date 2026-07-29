@@ -130,6 +130,3 @@ parts:
       - usr/share
       - etc
       - bin
-      - lib
-      - lib64
-      - sbin

@@ -40,6 +40,9 @@ _mock_hardened_linux() {
     _mock_hardened_linux
     # shellcheck source=/dev/null
     source "$OMS_ROOT/lib/checks/security/linux-hardening-posture.sh"
+    _lh_secure_boot() {
+        _lh_coverage "Secure Boot is not measurable: test fixture"
+    }
 
     run check_linux_hardening_posture
 
@@ -84,7 +87,10 @@ _mock_hardened_linux() {
 @test "Secrets metadata check works with Linux stat and hash helpers" {
     _mock_command stat \
         'for arg in "$@"; do last="$arg"; done' \
-        'exec /usr/bin/stat -f "%Lp" "$last"'
+        'case "$(uname -s)" in' \
+        '  Darwin) exec /usr/bin/stat -f "%Lp" "$last" ;;' \
+        '  *) exec /usr/bin/stat -c "%a" "$last" ;;' \
+        'esac'
     mkdir -p "$HOME/.aws"
     printf '%s\n' '[default]' > "$HOME/.aws/credentials"
     chmod 0644 "$HOME/.aws/credentials"
