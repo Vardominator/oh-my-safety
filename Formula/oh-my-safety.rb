@@ -1,14 +1,17 @@
 class OhMySafety < Formula
-  desc "macOS safety & privacy monitor: leaks, malware persistence, wallet exposure"
+  desc "Local-first safety monitor for privacy, persistence, and exposed secrets"
   homepage "https://github.com/Vardominator/oh-my-safety"
   url "https://github.com/Vardominator/oh-my-safety/archive/refs/tags/v0.2.3.tar.gz"
-  # Filled in by the release workflow when the tag is pushed.
-  sha256 "REPLACE_WITH_RELEASE_SHA256"
+  sha256 "e2e14501b4843dd766568c8be205c8b6a4f3f1bfc973a385c402def342e75310"
   license "MIT"
-  head "https://github.com/Vardominator/oh-my-safety.git", branch: "main"
+  head do
+    url "https://github.com/Vardominator/oh-my-safety.git", branch: "main"
+    depends_on "go" => :build
+  end
 
-  # No dependencies on purpose: pure /bin/bash (3.2-compatible) and tools that
-  # ship with macOS. "Zero dependencies" is a headline feature.
+  # v0.2.x is the Bash-only compatibility release. Starting with v0.3, stable
+  # source archives also build the optional pure-Go journal/scanner core.
+  depends_on "go" => :build if version >= Version.new("0.3.0")
 
   def install
     libexec.install "bin", "lib", "config", "plugins"
@@ -16,6 +19,16 @@ class OhMySafety < Formula
     # symlink is all that's needed — no wrapper, no path rewriting.
     bin.install_symlink libexec/"bin/oh-my-safety"
     bin.install_symlink libexec/"bin/oh-my-privacy"
+    if File.exist?("go.mod")
+      ENV["CGO_ENABLED"] = "0"
+      system "go", "build", "-trimpath", "-ldflags",
+             "-X main.agentVersion=#{version}", "-o",
+             libexec/"bin/oh-my-safety-agent", "./cmd/oh-my-safety-agent"
+      system "go", "build", "-trimpath", "-o",
+             libexec/"bin/oh-my-safety-intel", "./cmd/oh-my-safety-intel"
+      bin.install_symlink libexec/"bin/oh-my-safety-agent"
+      bin.install_symlink libexec/"bin/oh-my-safety-intel"
+    end
     pkgshare.install "docs" if File.directory?("docs")
   end
 
@@ -41,8 +54,8 @@ class OhMySafety < Formula
         oh-my-safety doctor     # check setup & permissions
 
       Some deep checks (TCC audit, protected-folder scans) need Full Disk
-      Access — run `oh-my-safety doctor` for guidance. Everything runs
-      locally; nothing is ever uploaded. See the privacy docs:
+      Access — run `oh-my-safety doctor` for guidance. Core scanning remains
+      local; optional external adapters are off by default. See:
         #{opt_pkgshare}/docs/privacy.md
     EOS
   end
@@ -51,8 +64,16 @@ class OhMySafety < Formula
     assert_match "oh-my-safety v", shell_output("#{bin}/oh-my-safety version")
     assert_match "routing", shell_output("#{bin}/oh-my-safety checks")
     # A scan exits non-zero when it finds issues (normal on any real machine),
-    # so just assert it runs and then that status emits valid output.
-    shell_output("#{bin}/oh-my-safety scan --offline || true")
+    # but an execution error (3+) is a distribution failure.
+    shell_output("\"#{bin}/oh-my-safety\" scan --offline || [ $? -le 2 ]")
     assert_match "\"schema\"", shell_output("#{bin}/oh-my-safety status --json")
+    if (bin/"oh-my-safety-agent").exist?
+      assert_match "\"ready\":true",
+                   shell_output("#{bin}/oh-my-safety-agent --state-db #{testpath}/journal.db")
+    end
+    if (bin/"oh-my-safety-intel").exist?
+      assert_match "\"commands\"",
+                   shell_output("#{bin}/oh-my-safety-intel help")
+    end
   end
 end

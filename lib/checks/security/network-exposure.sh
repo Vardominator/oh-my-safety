@@ -73,6 +73,11 @@ check_network_exposure() {
     local floor loopback_mode
     floor="$(config_get "checks.security.network_exposure.ephemeral_port_floor" "49152")"
     loopback_mode="$(config_get "checks.security.network_exposure.loopback_new_listener" "info")"
+    case "$floor" in ''|*[!0-9]*) floor=49152 ;; esac
+    [[ "${#floor}" -le 5 ]] || floor=49152
+    floor="$(( 10#$floor ))"
+    [[ "$floor" -ge 1 && "$floor" -le 65535 ]] || floor=49152
+    case "$loopback_mode" in info|warn|off) : ;; *) loopback_mode=info ;; esac
 
     log_debug "network-exposure: lsof runs without sudo, so only the current user's listeners are visible"
 

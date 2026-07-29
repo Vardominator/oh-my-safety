@@ -1,5 +1,9 @@
 # Baselines & state
 
+The state map below describes v0.3.0. The v0.2.3 compatibility line uses the
+compatible baseline, pending, allowlist, notification, cache, and last-scan
+subset.
+
 Some checks answer an absolute question ("is the firewall on?"). Others answer a
 relative one: **"has anything changed since I last approved my machine's state?"**
 That relative detection is what makes oh-my-safety a tripwire, and it's powered by
@@ -17,12 +21,19 @@ allowlist/<check>.list    finding-ids you chose to ignore (exact or glob)
 notified/<check>.tsv      notification de-dupe bookkeeping
 cache/codesign.tsv        cached code-signature verdicts (by path+inode+mtime)
 last-scan.tsv             summaries, exact non-OK details, and remediation hints
+last-partial-scan.tsv     exact result of the newest filtered recheck
 log/scan.log[.1-3]        rotated local log of non-ok findings
+log/events.tsv[.1-20]     scan, finding-lifecycle, and delivery history
+journal.db[-wal/-shm]     append-only SQLite event journal (portable core)
+schedule/*.epoch          per-check scheduler timestamps
+locks/scan.lock/          non-overlap owner record while a scan is active
 ```
 
-Writes are atomic (temp file + `mv`). `last-scan.tsv` is mode `600`; saved
+Snapshot/config writes are atomic (temp file + `mv`). `last-scan.tsv` is mode `600`; saved
 details can contain local paths and finding IDs, but never secret contents.
-Nothing here is ever transmitted.
+Raw baseline and journal contents are never transmitted. Explicit external
+notification or organization-report contracts disclose only the fields listed
+in [privacy.md](privacy.md).
 
 ## How drift detection works
 
@@ -73,3 +84,7 @@ oh-my-safety recheck secrets-exposure
 
 If it's gone, the check passes. This is the intended loop: **see it → fix or
 accept it → confirm.**
+
+Per-item notification state is reconciled at every check. A resolved item emits
+one recovery event and can alert again if it later reopens; one noisy item does
+not suppress a different item from the same check.

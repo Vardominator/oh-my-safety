@@ -2,7 +2,7 @@
 
 Scans your Downloads and temp folders with your own local YARA malware rules and flags any file that matches, so known malware can be caught before you run it.
 
-**Category:** security · **Default severity:** critical · **Platforms:** macos · **Runs every:** 86400s (in the background agent)
+**Category:** security · **Default severity:** critical · **Platforms:** macos, linux · **Runs every:** 86400s (in the background agent)
 
 ## What it protects you from
 

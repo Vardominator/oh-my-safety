@@ -1,10 +1,9 @@
 #!/bin/bash
-# oh-my-safety - macOS safety & privacy monitor
+# oh-my-safety - local-first safety & privacy monitor
 # https://github.com/Vardominator/oh-my-safety
 #
-# Continuously verifies your Mac's privacy (VPN/DNS/IP leaks) and security
-# (malicious persistence, suspicious processes, exposed secrets & crypto
-# wallets, weak hardening). Zero dependencies, nothing ever leaves your machine.
+# Continuously verifies endpoint privacy and security on macOS and Linux.
+# Core scanning is local; explicit connected adapters are always opt-in.
 
 set -uo pipefail
 
@@ -33,7 +32,7 @@ OMS_CONFIG_FILE_ARG=""
 
 usage() {
     cat << EOF
-oh-my-safety v${OMS_VERSION} - macOS safety & privacy monitor
+oh-my-safety v${OMS_VERSION} - local-first safety & privacy monitor
 
 USAGE:
     oh-my-safety [GLOBAL OPTIONS] <command> [args]
@@ -41,10 +40,22 @@ USAGE:
 COMMANDS:
     scan [--check N] [--category C] [--offline] [--deep]
                           Run all checks once and report findings
-    monitor [--quiet]     Run continuously (used by the launchd agent)
+    monitor [--quiet]     Run continuously (used by launchd/systemd)
     status [--format F]   Show the last scan's findings (F: human|json|tsv|swiftbar)
+    history [--json]      Show the durable local scan/finding event history
     checks                List every check and whether it's on/off
     doctor                Diagnose setup, permissions, and readiness
+    profile [show|list|set NAME]
+                          Inspect or select an operating/security profile
+    notifications [show|test]
+                          Inspect channels or send a test notification
+    organization {status|enroll|sync|policy|rotate-credential|disable}
+                          Manage explicit self-hosted controller enrollment
+    secret-scan [PATH...] Run the bounded built-in redacted credential scanner
+    triage-executable PATH [PATH...]
+                          Hash and explain local executable risk signals
+    exposure {contracts|password|account}
+                          Run an explicit internet-exposure adapter
 
     enable  <check|cat>   Turn a check (or whole category) on
     disable <check|cat>   Turn a check (or whole category) off
@@ -56,8 +67,8 @@ COMMANDS:
     accept  <check>       Accept current state as the new baseline (for drift checks)
     baseline {list|show|approve|reset} <check>
 
-    install-agent         Install the launchd monitoring agent (non-Homebrew)
-    uninstall-agent       Remove the launchd monitoring agent
+    install-agent         Install the launchd/systemd user agent (non-Homebrew)
+    uninstall-agent       Remove the launchd/systemd user agent
     menubar {install|uninstall}
                           Install the optional SwiftBar menu-bar plugin
     version               Show version
@@ -76,7 +87,8 @@ EXAMPLES:
     oh-my-safety ignore persistence-scan 'ua:com.foo:/Users/me/run.sh'
     brew services start oh-my-safety  # continuous background monitoring
 
-Everything runs locally. Nothing is ever uploaded. See docs/privacy.md.
+Core protection runs locally. Only explicitly enabled adapters transmit their
+documented fields. See docs/privacy.md.
 EOF
 }
 
@@ -135,7 +147,14 @@ main() {
         scan)            cmd_scan "$@" ;;
         monitor)         cmd_monitor "$@" ;;
         status)          cmd_status "$@" ;;
+        history)         cmd_history "$@" ;;
         checks)          cmd_checks "$@" ;;
+        profile)         cmd_profile "$@" ;;
+        notifications)   cmd_notifications "$@" ;;
+        organization)    cmd_organization "$@" ;;
+        secret-scan)     cmd_secret_scan "$@" ;;
+        triage-executable) cmd_triage_executable "$@" ;;
+        exposure)        cmd_exposure "$@" ;;
         baseline)        cmd_baseline "$@" ;;
         doctor)          cmd_doctor "$@" ;;
         enable)          cmd_enable "$@" ;;

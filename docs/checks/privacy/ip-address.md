@@ -16,18 +16,24 @@ It is a reporting check, not an alarm: it hands you the number and lets you judg
 
 This is a privacy check, so it deliberately makes an **outbound network call** (it is marked `CHECK_REQUIRES_NETWORK=true`). Because it touches the network, it **self-skips** — reported as "skipped (offline mode)" — whenever you run a scan with `scan --offline`.
 
-When it runs, `check_ip_address` calls the platform helper `get_public_ip`, which on macOS does the following:
+When it runs, `check_ip_address` calls the platform helper `get_public_ip`:
 
 1. It reads the list of IP-lookup services from your config key `checks.privacy.ip_address.services`. For each one, in order, it runs:
    ```
-   curl -s --max-time 10 <service>
+   curl -s --max-time 10 https://<service>
    ```
    The first service that returns a non-empty response wins — that text is used as your public IP and no further services are contacted. By default the list is:
    - `ifconfig.me`
    - `api.ipify.org`
    - `icanhazip.com`
-2. If the config list has entries but every one of them fails or times out, the lookup gives up and returns nothing (it does not silently reach out to any other server).
-3. Only if the configured list is completely empty does it fall back to a hard-coded chain of the same three endpoints: `ifconfig.me`, then `api.ipify.org`, then `icanhazip.com` (each with `curl -s --max-time 10`).
+   A service without a scheme is normalized to HTTPS. Linux can use `wget`
+   when `curl` is unavailable.
+2. If the config list has entries but every one of them fails or times out, the
+   lookup gives up and returns nothing; it does not contact an unconfigured
+   provider.
+3. On macOS only, a completely empty service list falls back to the same three
+   built-in HTTPS endpoints. Linux treats an empty list as no configured
+   provider.
 
 When a public IP comes back, the check also stores it in the `OMS_PUBLIC_IP` environment variable, which the `ipv6-leak` and `dns-leak` checks reuse during the same scan so they do not have to look it up again.
 
@@ -55,7 +61,8 @@ None. This check is stateless: it keeps no baseline and remembers nothing betwee
 
 ## Permissions
 
-None needed. It requires no Full Disk Access and no TCC (privacy) permission — just `curl` and working outbound network access.
+No elevated permission is needed. It requires working outbound network access
+and `curl` on macOS, or `curl`/`wget` on Linux.
 
 ## Configuration
 
@@ -83,7 +90,10 @@ Toggle the check with:
 - **It does not verify anything.** The check only fetches and displays your public IP; it has no idea whether that IP belongs to your VPN or to your real connection. As long as *any* IP comes back, it passes — it will happily report your true home IP as a clean pass if the VPN is down. Rely on `vpn-tunnel`, `routing`, and the leak checks to actually catch leaks.
 - **A warn is ambiguous.** "Could not retrieve public IP" can mean no internet, a captive portal (hotel or airport Wi-Fi login page), or all three echo services being down at once — none of which is itself a privacy breach.
 - **It trusts whatever the service returns.** If an endpoint replies with a non-empty error string or HTML page instead of an address, the check treats that text as your IP and passes.
-- **Plain-text lookups can be tampered with.** The default services are contacted by bare hostname, so `curl` uses plain HTTP. A network attacker positioned between you and the service could in principle alter the returned value, so treat the displayed IP as a helpful indicator, not cryptographic proof.
+- **HTTPS is not attestation.** Bare configured hostnames are normalized to
+  HTTPS, but a compromised provider, trust store, proxy, or endpoint can still
+  return a misleading value. Treat the displayed IP as a helpful indicator,
+  not cryptographic proof.
 - **Third-party dependency.** The accuracy of the reported IP is only as good as the external echo service you point it at, and that operator sees your request.
 - **Point-in-time only.** It checks once per full scan (every 300s by default). A VPN drop that happens and recovers between scans can go unseen.
 - **Userspace check.** Like all of oh-my-safety, it runs as an ordinary user process and trusts the OS network stack; root-level malware could redirect or spoof these lookups to hide the truth.

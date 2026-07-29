@@ -11,25 +11,84 @@
 #   - 2-space indentation ONLY
 #   - key: scalar
 #   - block lists ("- item") indented 2 spaces under their key
-#   - full-line "# comments" and blank lines
-# NOT supported: inline {}/[], multi-line strings, anchors, tabs, trailing
-#   "# comments" after a value.
+#   - full-line comments, whitespace-prefixed inline comments, and blank lines
+# NOT supported: inline {}/[], multi-line strings, anchors, tabs, or nested
+#   maps inside list items.
 
 version: 2
+
+# A profile is an auditable bundle of defaults. `oh-my-safety profile set`
+# writes an explicit atomic override bundle; individual `set` commands can
+# still refine it afterward.
+profile:
+  name: personal-balanced
+  workload: workstation               # workstation | developer | server
+  protection: balanced                # balanced | strict
+  management: standalone              # standalone | managed
+  connectivity: connected             # connected | offline | airgapped
 
 monitoring:
   interval: 300         # seconds between full scans (daemon)
   fast_interval: 15     # seconds between quick VPN route-flip checks (daemon)
+  deep: false           # include enabled local deep scanners in scheduled runs
 
 notifications:
   enabled: true
   sound: true
   min_severity: warn                # info | warn | critical
   renotify_interval_hours: 4        # how often to re-alert an unresolved critical
+  external:
+    enabled: false                  # explicit global gate for network delivery
+    include_details: false          # false sends only a generic local-review prompt
+    timeout_seconds: 10
+    # Optional strict KEY=value store for background services. If present it
+    # must be user-owned, regular, non-symlink, ACL-free, and mode 600 or 400.
+    # Empty uses $XDG_CONFIG_HOME/oh-my-safety/notifications.env, or
+    # ~/.config/oh-my-safety/notifications.env when XDG_CONFIG_HOME is unset.
+    credentials_file: ""
+  channels:
+    desktop:
+      enabled: true
+    discord:
+      enabled: false
+      webhook_url_env: OMS_DISCORD_WEBHOOK_URL
+    telegram:
+      enabled: false
+      bot_token_env: OMS_TELEGRAM_BOT_TOKEN
+      chat_id: ""
+      api_base: https://api.telegram.org
+    sendgrid:
+      enabled: false
+      api_key_env: SENDGRID_API_KEY
+      from: ""
+      to: ""
+      endpoint: https://api.sendgrid.com/v3/mail/send
+    whatsapp:
+      enabled: false
+      access_token_env: OMS_WHATSAPP_ACCESS_TOKEN
+      phone_number_id: ""
+      to: ""
+      graph_version: ""
+      api_base: https://graph.facebook.com
+    webhook:
+      enabled: false
+      url_env: OMS_WEBHOOK_URL
+      bearer_token_env: ""
+
+remediation:
+  mode: ask                         # observe | ask | policy (never arbitrary remote shell)
 
 logging:
   max_size_kb: 1024                 # rotate scan.log past this size
   keep_rotations: 3
+
+journal:
+  enabled: true                     # ingest versioned scan rows when the Go core is installed
+
+organization:
+  enabled: false                    # set by explicit controller enrollment
+  sync_interval_seconds: 300        # bootstrap cadence until signed policy arrives
+  enrollment_token_env: OMS_ENROLLMENT_TOKEN
 
 # Opt-in external tools. Used ONLY when enabled here AND already installed.
 # oh-my-safety never installs or auto-updates these.
@@ -98,12 +157,26 @@ checks:
       filename_scan: true
     tcc_audit:
       enabled: true
+    linux_hardening_posture:
+      enabled: true
+      allow_remote_login: false
+    linux_persistence_scan:
+      enabled: true
+    local_secret_scan:
+      enabled: false
+      # scan_roots omitted: ~/Projects, ~/Developer, ~/code, and ~/src
+    breach_exposure:
+      enabled: false
+      api_key_env: HIBP_API_KEY
+      # account_envs:
+      #   - OMS_MONITORED_EMAIL
 
     # Opt-in deep scanners (off by default; also require the tool enabled
     # under `tools:` above and installed). See docs/checks/security/.
     secrets_content:
       enabled: false
-      scan_roots: []
+      # scan_roots is omitted by default, which uses:
+      # ~/Projects, ~/Developer, ~/code, and ~/src
     yara_scan:
       enabled: false
       rules_dir: ""

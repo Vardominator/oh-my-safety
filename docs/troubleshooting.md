@@ -24,6 +24,10 @@ steps and the settings deep link.
 - Run `oh-my-safety doctor` — it fires a test notification.
 - Allow notifications for "Script Editor" in System Settings › Notifications, or
   `brew install terminal-notifier` for a dedicated identity.
+- For a v0.3.0 external channel, run `oh-my-safety notifications show` and verify
+  the global gate, channel gate, connected profile, and strict credential file;
+  then run `oh-my-safety notifications test`. See
+  [notifications.md](notifications.md).
 - Findings are always in `oh-my-safety status` and the scan log regardless.
 
 ## "A legitimate app is being flagged"
@@ -38,8 +42,10 @@ oh-my-safety checks        # confirm on/off state
 ```
 
 ## "My config isn't taking effect"
-- CLI overrides (`enable`/`disable`/`set`) win over your `config.yaml`; check
-  `~/.config/oh-my-safety/overrides.conf`.
+- On a standalone endpoint, CLI overrides (`enable`/`disable`/`set`) win over
+  `config.yaml`; check `~/.config/oh-my-safety/overrides.conf`. On an enrolled
+  endpoint, explicitly controlled signed-policy fields have higher precedence;
+  inspect them with `oh-my-safety organization policy`.
 - The YAML parser needs **2-space indentation** and doesn't accept tabs or flow
   collections; `doctor` warns if your file fails to parse.
 

@@ -31,7 +31,7 @@ _menubar_install() {
         log_warn "SwiftBar not detected. Install it with: brew install --cask swiftbar"
     fi
 
-    local dest
+    local dest pin pin_tmp
     dest="$(_menubar_plugin_dir)"
     mkdir -p "$dest"
 
@@ -44,9 +44,40 @@ _menubar_install() {
             log_info "Retired old plugin: $(basename "$old") (renamed to .disabled)"
     done
 
-    cp "$src" "$dest/oh-my-safety.30s.sh"
-    chmod +x "$dest/oh-my-safety.30s.sh"
+    case "$OMS_BIN" in
+        *$'\n'*|*$'\r'*)
+            log_error "Cannot pin SwiftBar to an executable path containing a newline"
+            return 1
+            ;;
+        /*) : ;;
+        *)
+            log_error "Cannot pin SwiftBar to a non-absolute executable path: $OMS_BIN"
+            return 1
+            ;;
+    esac
+    if [[ ! -x "$OMS_BIN" ]]; then
+        log_error "Cannot pin SwiftBar to a missing executable: $OMS_BIN"
+        return 1
+    fi
+
+    cp "$src" "$dest/oh-my-safety.30s.sh" || {
+        log_error "Failed to copy the SwiftBar plugin into: $dest"
+        return 1
+    }
+    chmod +x "$dest/oh-my-safety.30s.sh" || return 1
+    pin="$dest/.oh-my-safety-bin"
+    pin_tmp="$(mktemp "$dest/.oh-my-safety-bin.XXXXXX")" || return 1
+    chmod 600 "$pin_tmp"
+    if ! printf '%s\n' "$OMS_BIN" > "$pin_tmp"; then
+        rm -f "$pin_tmp"
+        return 1
+    fi
+    if ! mv -f "$pin_tmp" "$pin"; then
+        rm -f "$pin_tmp"
+        return 1
+    fi
     log_info "Installed SwiftBar plugin: $dest/oh-my-safety.30s.sh"
+    log_info "Pinned SwiftBar to: $OMS_BIN"
 
     # Nudge SwiftBar to reload if it's running.
     if pgrep -x SwiftBar >/dev/null 2>&1; then
@@ -60,6 +91,6 @@ _menubar_install() {
 _menubar_uninstall() {
     local dest
     dest="$(_menubar_plugin_dir)"
-    rm -f "$dest/oh-my-safety.30s.sh"
+    rm -f "$dest/oh-my-safety.30s.sh" "$dest/.oh-my-safety-bin"
     log_info "Removed SwiftBar plugin from: $dest"
 }

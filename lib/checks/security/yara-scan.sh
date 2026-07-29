@@ -8,7 +8,7 @@
 CHECK_NAME="yara-scan"
 CHECK_DESCRIPTION="YARA malware-rule scan of download/temp dirs"
 CHECK_CATEGORY="security"
-CHECK_PLATFORMS="macos"
+CHECK_PLATFORMS="macos linux"
 CHECK_SEVERITY="critical"
 CHECK_CONTRACT="2"
 CHECK_REQUIRES_NETWORK="false"

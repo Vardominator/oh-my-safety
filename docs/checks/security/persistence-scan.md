@@ -46,7 +46,7 @@ No Full Disk Access required. The only permission it touches is **Automation acc
 
 ## Configuration
 
-Reads these config keys (in `~/.config/oh-my-privacy/config.yaml`):
+Reads these config keys (in `~/.config/oh-my-safety/config.yaml`):
 
 - `checks.security.persistence_scan.enabled` — whether the check runs at all (default: enabled).
 - `checks.security.persistence_scan.login_items` — whether to scan Login Items (default: `true`). Set to `false` to skip the System Events / Automation call entirely.

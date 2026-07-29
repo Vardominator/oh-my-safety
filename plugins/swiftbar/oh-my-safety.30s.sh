@@ -14,12 +14,28 @@
 # reads the last scan result via `oh-my-safety status --format swiftbar`. The
 # background agent (brew services start oh-my-safety) does the actual scanning.
 
+# `oh-my-safety menubar install` writes this non-secret hint beside the plugin
+# so SwiftBar uses the same build that installed it. This matters when a user
+# keeps a stable Homebrew build while testing a checkout under ~/.local.
 OMS_BIN=""
+OMS_PIN_FILE="$(dirname "$0")/.oh-my-safety-bin"
+if [ -f "$OMS_PIN_FILE" ] && [ ! -L "$OMS_PIN_FILE" ]; then
+    IFS= read -r candidate < "$OMS_PIN_FILE"
+    case "$candidate" in
+        /*)
+            if [ -x "$candidate" ]; then
+                OMS_BIN="$candidate"
+            fi
+            ;;
+    esac
+fi
+
 for candidate in \
     "$(command -v oh-my-safety 2>/dev/null)" \
     /opt/homebrew/bin/oh-my-safety \
     /usr/local/bin/oh-my-safety \
     "$HOME/.local/bin/oh-my-safety"; do
+    [ -z "$OMS_BIN" ] || break
     if [ -n "$candidate" ] && [ -x "$candidate" ]; then
         OMS_BIN="$candidate"
         break

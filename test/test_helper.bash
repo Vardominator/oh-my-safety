@@ -11,3 +11,13 @@ _oms_setup() {
     # shellcheck source=/dev/null
     source "$OMS_ROOT/lib/core.sh"
 }
+
+# Return only the portable octal permission bits for a test path. GNU stat's
+# -f option describes the filesystem and can still exit successfully, so
+# probing BSD syntax before GNU syntax is not a reliable portability check.
+_oms_test_file_mode() {
+    case "$(uname -s)" in
+        Darwin) stat -f '%Lp' "$1" ;;
+        *) stat -c '%a' "$1" ;;
+    esac
+}

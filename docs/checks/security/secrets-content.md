@@ -2,7 +2,7 @@
 
 An opt-in deep scan that runs an external secret scanner (gitleaks and/or trufflehog) over your source-code folders to find hard-coded passwords, API keys, and tokens sitting in files on disk.
 
-**Category:** security · **Default severity:** warn · **Platforms:** macos · **Runs every:** 86400s (in the background agent)
+**Category:** security · **Default severity:** warn · **Platforms:** macos, linux · **Runs every:** 86400s (in the background agent)
 
 ## What it protects you from
 
@@ -53,7 +53,8 @@ This check does **not** use baseline drift. It has no concept of "quietly record
 Config keys under `checks.security.secrets_content` in `~/.config/oh-my-safety/config.yaml` (defaults from `config/default.yaml`):
 
 - `enabled` — `false` (this check is off by default)
-- `scan_roots` — `[]` (empty; falls back to `~/Projects`, `~/Developer`, `~/code`, `~/src`)
+- `scan_roots` — omitted by default, which falls back to `~/Projects`,
+  `~/Developer`, `~/code`, and `~/src`
 
 It also depends on the opt-in tool switches under `tools.*`:
 

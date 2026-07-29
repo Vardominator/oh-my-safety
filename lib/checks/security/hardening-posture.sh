@@ -155,6 +155,9 @@ check_hardening_posture() {
         case "$max_age" in
             ''|*[!0-9]*) max_age="45" ;;
         esac
+        [[ "${#max_age}" -le 5 ]] || max_age=45
+        max_age="$(( 10#$max_age ))"
+        [[ "$max_age" -ge 1 && "$max_age" -le 3650 ]] || max_age=45
         case "$xp_mtime" in
             ''|*[!0-9]*) xp_mtime="" ;;
         esac

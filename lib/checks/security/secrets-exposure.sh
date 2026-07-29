@@ -3,7 +3,7 @@
 CHECK_NAME="secrets-exposure"
 CHECK_DESCRIPTION="Flags world-readable keys/credential files and credential-looking notes in unprotected locations"
 CHECK_CATEGORY="security"
-CHECK_PLATFORMS="macos"
+CHECK_PLATFORMS="macos linux"
 CHECK_SEVERITY="warn"
 CHECK_CONTRACT="2"
 CHECK_REQUIRES_NETWORK="false"
@@ -210,6 +210,9 @@ _secexp_envfiles() {
     case "$depth" in
         ''|*[!0-9]*) depth=3 ;;
     esac
+    [[ "${#depth}" -le 2 ]] || depth=3
+    depth="$(( 10#$depth ))"
+    [[ "$depth" -ge 1 && "$depth" -le 20 ]] || depth=3
 
     for root in "$HOME/Projects" "$HOME/Developer" "$HOME/code" "$HOME/src" "$HOME/dev"; do
         [ -d "$root" ] || continue

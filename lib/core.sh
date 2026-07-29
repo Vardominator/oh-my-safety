@@ -7,7 +7,7 @@
 _OMS_CORE_LOADED=1
 
 # Single source of truth for the version (CI enforces nothing else hardcodes it)
-OMS_VERSION="0.2.3"
+OMS_VERSION="0.3.0"
 
 # Install root. Honors OMP_ROOT for backward compatibility.
 OMS_ROOT="${OMS_ROOT:-${OMP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}"
@@ -36,6 +36,12 @@ source "$OMS_ROOT/lib/yaml.sh"
 source "$OMS_ROOT/lib/state.sh"
 # shellcheck source=/dev/null
 source "$OMS_ROOT/lib/allowlist.sh"
+# shellcheck source=/dev/null
+source "$OMS_ROOT/lib/events.sh"
+# shellcheck source=/dev/null
+source "$OMS_ROOT/lib/managed.sh"
+# shellcheck source=/dev/null
+source "$OMS_ROOT/lib/notifications.sh"
 
 # ISO-8601 UTC timestamp
 iso_now() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
@@ -83,37 +89,55 @@ _sev_rank() {
 notify() {
     local title="$1" message="$2" subtitle="${3:-}"
     config_enabled "notifications.enabled" "true" || return 0
-    send_notification "$title" "$message" "$subtitle"
+    dispatch_notification "$title" "$message" "$subtitle"
 }
 
 # Finding-aware notification with dedupe. Console output always; OS
 # notification only when severity >= configured threshold and the finding
 # hasn't already been notified within its re-notify window.
 #   notify_finding <check> <severity> <finding_id> <title> <message>
+#                  [console] [deliver]
 notify_finding() {
     local check="$1" sev="$2" id="$3" title="$4" msg="$5"
+    local console="${6:-true}" deliver="${7:-true}"
+    OMS_NOTIFICATION_SENT=false
 
-    case "$sev" in
-        critical) print_check_result critical "$msg" ;;
-        warn)     print_check_result warn "$msg" ;;
-        *)        print_check_result info "$msg" ;;
-    esac
+    if [[ "$console" == "true" ]]; then
+        case "$sev" in
+            critical) print_check_result critical "$msg" ;;
+            warn)     print_check_result warn "$msg" ;;
+            *)        print_check_result info "$msg" ;;
+        esac
+    fi
 
     config_enabled "notifications.enabled" "true" || return 0
     local minsev; minsev="$(config_get 'notifications.min_severity' 'warn')"
     [[ "$(_sev_rank "$sev")" -lt "$(_sev_rank "$minsev")" ]] && return 0
 
-    local now last interval
+    local now last last_sev interval hours
     now="$(date +%s)"
     last="$(_notify_last_epoch "$check" "$id")"
+    last_sev="$(_notify_last_severity "$check" "$id")"
+    case "$last" in ''|*[!0-9]*) last="" ;; esac
     if [[ "$sev" == "critical" ]]; then
-        interval=$(( $(config_get 'notifications.renotify_interval_hours' '4') * 3600 ))
+        hours="$(config_get 'notifications.renotify_interval_hours' '4')"
+        case "$hours" in ''|*[!0-9]*) hours=4 ;; esac
+        [[ "${#hours}" -le 6 ]] || hours=4
+        hours="$(( 10#$hours ))"
+        interval=$(( hours * 3600 ))
     else
         interval=$(( 24 * 3600 ))
     fi
 
-    if [[ -z "$last" ]] || [[ $(( now - last )) -ge $interval ]]; then
-        send_notification "$title" "$msg" ""
+    # Severity escalation is immediately actionable even if the ordinary
+    # re-notify interval has not elapsed.
+    if [[ -z "$last" ]] || \
+       [[ "$(_sev_rank "$sev")" -gt "$(_sev_rank "$last_sev")" ]] || \
+       [[ $(( now - last )) -ge $interval ]]; then
+        if [[ "$deliver" == "true" ]]; then
+            dispatch_notification "$title" "$msg" ""
+            OMS_NOTIFICATION_SENT=true
+        fi
         _notify_record "$check" "$id" "$sev" "$now"
     fi
 }

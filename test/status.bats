@@ -12,9 +12,11 @@ setup() {
     cat > "$STATUS_FIXTURE" <<EOF
 schema	1
 meta	timestamp	$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+meta	updated_at	$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 meta	version	0.2.2
 meta	platform	macos
 meta	source	agent
+meta	scope	composite
 meta	exit	1
 meta	fda	true
 result	security	hardening-posture	warn	warn	1 hardening issue(s)	Follow the exact fix, then recheck.	docs/checks/security/hardening-posture.md
@@ -38,6 +40,13 @@ EOF
     [[ "$output" == *"Healthy checks (1)"* ]]
     [[ "$output" == *"--✓ VPN tunnel — VPN tunnel active"* ]]
     [[ "$output" == *"tcp¦*¦/usr/libexec/rapportd¦wan"* ]]
+    [[ "$output" == *"color=#1F2937,#F9FAFB"* ]]
+    [[ "$output" == *"color=#4B5563,#D1D5DB"* ]]
+    [[ "$output" == *"color=#7A3E00,#FFD166"* ]]
+    [[ "$output" == *"color=#166534,#86EFAC"* ]]
+    [[ "$output" == *"color=#17603A,#8CE3B0"* ]]
+    [[ "$output" != *"color=gray"* ]]
+    [[ "$output" != *"color=orange"* ]]
 }
 
 @test "JSON exposes remediation and exact detail arrays" {
@@ -46,12 +55,15 @@ EOF
     printf '%s' "$output" | python3 -m json.tool >/dev/null
     [[ "$output" == *'"remediation":"Follow the exact fix, then recheck."'* ]]
     [[ "$output" == *'"details":["⚠️  Application Firewall is disabled"'* ]]
+    [[ "$output" == *'"scope":"composite"'* ]]
+    [[ "$output" == *'"updated_at":"'* ]]
 }
 
 @test "human status includes an actionable details section" {
     run _status_human "$STATUS_FIXTURE"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Actionable details"* ]]
+    [[ "$output" == *"Scope: composite"* ]]
     [[ "$output" == *"Application Firewall is disabled"* ]]
     [[ "$output" == *"Suggested action: Follow the exact fix, then recheck."* ]]
     [[ "$output" == *"Open remediation guide"* || "$output" == *"Guide: https://github.com/"* ]]

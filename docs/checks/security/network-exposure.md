@@ -65,7 +65,8 @@ No special permissions are required — **no Full Disk Access and no TCC prompt*
 
 ## Configuration
 
-Config keys under `checks.security.network_exposure` in `~/.config/oh-my-privacy/config.yaml` (defaults from `config/default.yaml`):
+Config keys under `checks.security.network_exposure` in
+`~/.config/oh-my-safety/config.yaml` (defaults from `config/default.yaml`):
 
 - `enabled` — `true`
 - `loopback_new_listener` — `info` (one of `info | warn | off`; how new signed loopback listeners are treated)

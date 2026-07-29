@@ -1,0 +1,62 @@
+#!/bin/sh
+# Snap entry point shared by the CLI and optional systemd user monitor.
+
+set -eu
+umask 077
+
+if [ -z "${SNAP:-}" ] || [ -z "${SNAP_USER_COMMON:-}" ]; then
+    echo "oh-my-safety: snap runtime environment is unavailable" >&2
+    exit 70
+fi
+
+runtime_root="$SNAP/usr/lib/oh-my-safety"
+config_home="$SNAP_USER_COMMON/config"
+state_home="$SNAP_USER_COMMON/state"
+
+mkdir -p "$config_home" "$state_home"
+chmod 0700 "$config_home" "$state_home" 2>/dev/null || true
+
+# Classic snaps retain the real HOME so endpoint checks inspect the user's
+# actual files. Config and state deliberately live in SNAP_USER_COMMON so the
+# CLI and an explicitly installed user monitor share durable,
+# revision-independent local data.
+export XDG_CONFIG_HOME="$config_home"
+export XDG_STATE_HOME="$state_home"
+export OMS_PACKAGING="snap"
+
+# A classic snap's default PATH contains host paths, not the snap payload.
+# Prepending both the private application bin and staged utilities ensures the
+# bundled Go helpers and runtime tools are selected deterministically.
+PATH="$runtime_root/bin:$SNAP/usr/sbin:$SNAP/usr/bin:$SNAP/sbin:$SNAP/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+target="$runtime_root/bin/oh-my-safety"
+mode="${1:-}"
+
+case "$mode" in
+    --oms-snap-privacy)
+        shift
+        target="$runtime_root/bin/oh-my-privacy"
+        ;;
+    --oms-snap-agent)
+        shift
+        target="$runtime_root/bin/oh-my-safety-agent"
+        ;;
+    --oms-snap-intel)
+        shift
+        target="$runtime_root/bin/oh-my-safety-intel"
+        ;;
+esac
+
+if [ ! -x "$target" ]; then
+    echo "oh-my-safety: packaged executable is missing: $target" >&2
+    exit 70
+fi
+
+case "$target" in
+    *.sh) exec "$SNAP/usr/bin/bash" "$target" "$@" ;;
+    */oh-my-safety|*/oh-my-privacy)
+        exec "$SNAP/usr/bin/bash" "$target" "$@"
+        ;;
+    *) exec "$target" "$@" ;;
+esac

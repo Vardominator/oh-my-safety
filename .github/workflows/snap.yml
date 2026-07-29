@@ -1,0 +1,157 @@
+name: Snap
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/snap.yml"
+      - "bin/**"
+      - "cmd/**"
+      - "config/**"
+      - "docs/**"
+      - "go.mod"
+      - "go.sum"
+      - "internal/**"
+      - "lib/**"
+      - "packaging/snap/**"
+      - "plugins/**"
+      - "snap/**"
+  workflow_call:
+  pull_request:
+    paths:
+      - ".github/workflows/snap.yml"
+      - "bin/**"
+      - "cmd/**"
+      - "config/**"
+      - "docs/**"
+      - "go.mod"
+      - "go.sum"
+      - "internal/**"
+      - "lib/**"
+      - "packaging/snap/**"
+      - "plugins/**"
+      - "snap/**"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish tested snaps to experimental edge (canonical main only)
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: snap-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-test:
+    name: Snap (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Build native snap
+        id: build
+        uses: snapcore/action-build@3bdaa03e1ba6bf59a65f84a751d943d549a54e79
+        with:
+          snapcraft-args: --platform ${{ matrix.arch }}
+
+      - name: Inspect, install, and smoke-test
+        env:
+          SNAP_FILE: ${{ steps.build.outputs.snap }}
+        run: |
+          set -eux
+          test -f "$SNAP_FILE"
+
+          unsquashfs -cat "$SNAP_FILE" meta/snap.yaml >"$RUNNER_TEMP/snap.yaml"
+          grep -Eq '^confinement: classic$' "$RUNNER_TEMP/snap.yaml"
+          grep -Eq '^architectures:$' "$RUNNER_TEMP/snap.yaml"
+          grep -Eq "^[[:space:]]*-[[:space:]]+${{ matrix.arch }}$" "$RUNNER_TEMP/snap.yaml"
+          if grep -Eq '^[[:space:]]+daemon-scope:' "$RUNNER_TEMP/snap.yaml"; then
+            echo "::error::Snap services must not require an experimental daemon scope"
+            exit 1
+          fi
+
+          sudo snap install --dangerous --classic "$SNAP_FILE"
+          trap 'sudo snap remove --purge oh-my-safety >/dev/null 2>&1 || true' EXIT
+
+          snap run oh-my-safety version
+          snap run oh-my-safety checks >/dev/null
+          snap run oh-my-safety set notifications.enabled false
+          test -f "$HOME/snap/oh-my-safety/common/config/oh-my-safety/overrides.conf"
+          snap run oh-my-safety help | grep -q 'install-agent'
+
+          sudo snap remove --purge oh-my-safety
+          trap - EXIT
+
+      - name: Upload tested snap
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: oh-my-safety-snap-${{ matrix.arch }}
+          path: ${{ steps.build.outputs.snap }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish experimental edge (${{ matrix.arch }})
+    needs: build-test
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.publish &&
+      github.repository == 'Vardominator/oh-my-safety' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Configure required reviewers and environment-scoped credentials on this
+    # environment before enabling Store publication.
+    environment: snap-store
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+
+    steps:
+      - name: Download tested snap
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        with:
+          name: oh-my-safety-snap-${{ matrix.arch }}
+          path: dist
+
+      - name: Gate Store publication
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: |
+          if [ -z "$SNAPCRAFT_STORE_CREDENTIALS" ]; then
+            echo "::error::SNAPCRAFT_STORE_CREDENTIALS is not configured."
+            exit 1
+          fi
+
+      - name: Resolve tested artifact
+        id: artifact
+        run: |
+          snap_file=$(find dist -maxdepth 1 -type f -name '*.snap' -print -quit)
+          test -n "$snap_file"
+          echo "path=$snap_file" >>"$GITHUB_OUTPUT"
+
+      - name: Publish tested snap
+        uses: snapcore/action-publish@214b86e5ca036ead1668c79afb81e550e6c54d40
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.artifact.outputs.path }}
+          # Store approval is uncertain. CI may seed edge for review, but
+          # candidate/stable promotion is intentionally outside this workflow.
+          release: edge
